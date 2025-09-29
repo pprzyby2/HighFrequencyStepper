@@ -4,6 +4,8 @@
 #include <Arduino.h>
 #include "driver/pcnt.h"
 
+void IRAM_ATTR pcnt_intr_handler(void* arg);
+
 class PulseCounter {
 private:
     pcnt_unit_t pcntUnit;
@@ -20,8 +22,7 @@ private:
     // Overflow handling
     static int16_t overflowCount;
     static PulseCounter* instance;
-    static void IRAM_ATTR pcnt_intr_handler(void* arg);
-    
+
 public:
     // Constructor
     PulseCounter(pcnt_unit_t unit = PCNT_UNIT_0, uint8_t pulsePin = GPIO_NUM_19, uint8_t ctrlPin = GPIO_NUM_21);

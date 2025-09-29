@@ -121,7 +121,7 @@ void setup() {
     
     // Initialize pulse counter
     pulseCounter.begin();
-    pulseCounter.enableInterrupt();  // Enable overflow handling
+    //pulseCounter.enableInterrupt();  // Enable overflow handling
     pulseCounter.start();            // Start counting
     
     // Initialize TMC2209
@@ -130,7 +130,8 @@ void setup() {
     TMC_Driver.rms_current(2200);       // Set motor RMS current (mA)
     TMC_Driver.microsteps(256);         // Set microsteps
     TMC_Driver.VACTUAL(0);              // Switch off internal stepper control
-    TMC_Driver.pwm_autoscale(true);     // Auto scaling
+    TMC_Driver.en_spreadCycle(false);   // Toggle spreadCycle
+    TMC_Driver.pwm_autoscale(true);     // Needed for stealthChop    
     
     Serial.println("Setup complete!");
     delay(2000);
@@ -167,8 +168,8 @@ void demonstrateClosedLoopControl() {
     Serial.println("\n=== Closed-Loop Position Control ===");
     
     pulseCounter.resetPosition();
-    int32_t targetPosition = 3200; // Target position
-    uint32_t tolerance = 1;        // Position tolerance
+    int32_t targetPosition = 32000; // Target position
+    uint32_t tolerance = 0;        // Position tolerance
     
     Serial.print("Moving to position: "); Serial.println(targetPosition);
     
@@ -189,7 +190,7 @@ void demonstrateClosedLoopControl() {
         }
         
         // Simple proportional control for speed
-        uint32_t speed = constrain(abs(error) * 2, 100, 2000);
+        uint32_t speed = constrain(abs(error) * 2, 100, 20000);
         pwmStepper.setFrequency(speed);
         
         // Update direction if needed
@@ -363,8 +364,6 @@ void testDirectionChanges() {
 void testCounterOverflow() {
     Serial.println("\n=== PCNT Counter Overflow Test ===");
     
-    // Set counter limits closer to test overflow
-    pulseCounter.setLimits(-5000, 5000);
     pulseCounter.resetPosition();
     
     pwmStepper.enable();
@@ -373,10 +372,10 @@ void testCounterOverflow() {
     Serial.println("Testing positive overflow (moving to +6000 steps)...");
     
     // Monitor position as we approach and exceed the limit
-    pwmStepper.startPWM(2000); // High speed for faster test
+    pwmStepper.startPWM(20000); // High speed for faster test
     
     bool positiveOverflowOK = false;
-    for (int i = 0; i < 60; i++) { // 6 seconds at 2kHz = 12000 steps
+    for (int i = 0; i < 60; i++) { // 6 seconds at 20kHz = 120000 steps
         delay(100);
         int32_t pos = pulseCounter.getPosition();
         int16_t raw = pulseCounter.getRawCount();
@@ -385,7 +384,7 @@ void testCounterOverflow() {
         Serial.print(" | Raw: "); Serial.print(raw);
         Serial.print(" | Position: "); Serial.println(pos);
         
-        if (pos > 6000) {
+        if (pos > 60000) {
             Serial.println("Positive overflow test completed!");
             positiveOverflowOK = true;
             break;
@@ -394,12 +393,12 @@ void testCounterOverflow() {
     
     pwmStepper.stopPWM();
     addTestResult("Positive Overflow", positiveOverflowOK, 
-                  positiveOverflowOK ? "Successfully exceeded +6000" : "Failed to reach +6000");
+                  positiveOverflowOK ? "Successfully exceeded +60000" : "Failed to reach +60000");
     delay(1000);
     
-    Serial.println("Testing negative overflow (moving to -6000 steps)...");
+    Serial.println("Testing negative overflow (moving to -60000 steps)...");
     pwmStepper.setDirection(false);
-    pwmStepper.startPWM(2000);
+    pwmStepper.startPWM(20000);
     
     bool negativeOverflowOK = false;
     for (int i = 0; i < 120; i++) { // More time to go negative
@@ -411,7 +410,7 @@ void testCounterOverflow() {
         Serial.print(" | Raw: "); Serial.print(raw);
         Serial.print(" | Position: "); Serial.println(pos);
         
-        if (pos < -6000) {
+        if (pos < -60000) {
             Serial.println("Negative overflow test completed!");
             negativeOverflowOK = true;
             break;
@@ -420,11 +419,8 @@ void testCounterOverflow() {
     
     pwmStepper.stopPWM();
     addTestResult("Negative Overflow", negativeOverflowOK, 
-                  negativeOverflowOK ? "Successfully exceeded -6000" : "Failed to reach -6000");
-    
-    // Reset limits back to normal
-    pulseCounter.setLimits(-10000, 10000);
-    
+                  negativeOverflowOK ? "Successfully exceeded -60000" : "Failed to reach -60000");
+        
     Serial.print("Final position after overflow test: ");
     Serial.println(pulseCounter.getPosition());
 }

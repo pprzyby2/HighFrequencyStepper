@@ -1,9 +1,21 @@
 #include "PulseCounter.h"
 #include "esp_log.h"
+#include "soc/pcnt_struct.h"  // For PCNT register access
+
+#define PCNT_H_LIM_VAL      INT16_MAX
+#define PCNT_L_LIM_VAL      INT16_MIN
 
 // Static member initialization
 int16_t PulseCounter::overflowCount = 0;
 PulseCounter* PulseCounter::instance = nullptr;
+
+// Static variables for interrupt handling
+static int32_t s_totalPosition = 0;
+static portMUX_TYPE s_mutex = portMUX_INITIALIZER_UNLOCKED;
+static pcnt_isr_handle_t s_isr_handle = NULL;
+static int32_t totalPosition = 0;
+static portMUX_TYPE mutex = portMUX_INITIALIZER_UNLOCKED;
+static pcnt_isr_handle_t high_low_limit_event_isr_handle = NULL;
 
 // Constructor
 PulseCounter::PulseCounter(pcnt_unit_t unit, uint8_t pulsePin, uint8_t ctrlPin) {
@@ -31,25 +43,26 @@ bool PulseCounter::begin() {
         .hctrl_mode = PCNT_MODE_KEEP,       // Keep counting direction when control signal is high
         .pos_mode = PCNT_COUNT_INC,         // Count up on positive edge
         .neg_mode = PCNT_COUNT_DIS,         // Don't count on negative edge
-        .counter_h_lim = 10000,             // High limit
-        .counter_l_lim = -10000,            // Low limit
+        .counter_h_lim = PCNT_H_LIM_VAL,             // High limit
+        .counter_l_lim = PCNT_L_LIM_VAL,            // Low limit
         .unit = pcntUnit,
         .channel = pcntChannel,
-    };
-    
+    };    
+
     // Initialize PCNT unit
     esp_err_t err = pcnt_unit_config(&pcnt_config);
-
-    // gpio_matrix_out(pulsePin, SIG_GPIO_OUT_IDX, false, false);      // Normal output
-    // gpio_matrix_in(pulsePin, PCNT_SIG_CH0_IN0_IDX, false);         // Also route to PCNT input
-    // gpio_matrix_out(ctrlPin, SIG_GPIO_OUT_IDX, false, false);      // Normal output  
-    // gpio_matrix_in(ctrlPin, PCNT_CTRL_CH0_IN0_IDX, false);        // Also route to PCNT control    
 
     if (err != ESP_OK) {
         Serial.print("PCNT unit config failed: ");
         Serial.println(esp_err_to_name(err));
         return false;
     }
+
+    // Configure GPIO pins mapping to PCNT
+    // gpio_matrix_out(pulsePin, SIG_GPIO_OUT_IDX, false, false);      // Normal output
+    // gpio_matrix_in(pulsePin, PCNT_SIG_CH0_IN0_IDX, false);         // Also route to PCNT input
+    gpio_matrix_out(ctrlPin, SIG_GPIO_OUT_IDX, false, false);      // Normal output  
+    gpio_matrix_in(ctrlPin, PCNT_CTRL_CH0_IN0_IDX, false);        // Also route to PCNT control        
     
     // Set glitch filter (100 APB clock cycles)
     pcnt_set_filter_value(pcntUnit, 100);
@@ -58,9 +71,14 @@ bool PulseCounter::begin() {
     // Enable events on reaching limits
     pcnt_event_enable(pcntUnit, PCNT_EVT_H_LIM);
     pcnt_event_enable(pcntUnit, PCNT_EVT_L_LIM);
+
+    /* Initialize PCNT's counter */
+    pcnt_counter_pause(pcntUnit);
+    pcnt_counter_clear(pcntUnit);    
     
-    // Initialize the counter value to zero
-    pcnt_counter_clear(pcntUnit);
+    /* Register ISR handler and enable interrupts for PCNT unit */
+    pcnt_isr_register(pcnt_intr_handler, NULL, 0, &s_isr_handle);
+    pcnt_intr_enable(pcntUnit);
     
     isInitialized = true;
     
@@ -133,10 +151,12 @@ int16_t PulseCounter::getRawCount() {
 // Get current position (including overflow handling)
 int32_t PulseCounter::getPosition() {
     if (!isInitialized) return 0;
-    
+
     int16_t count = getRawCount();
-    totalPosition = (int32_t)overflowCount * 20000 + count;  // 20000 = high_lim - low_lim
-    return totalPosition;
+    portENTER_CRITICAL(&s_mutex);
+    int32_t position = s_totalPosition + count;
+    portEXIT_CRITICAL(&s_mutex);
+    return position;
 }
 
 // Get absolute position since initialization
@@ -146,13 +166,12 @@ int32_t PulseCounter::getAbsolutePosition() {
 
 // Set current position
 void PulseCounter::setPosition(int32_t position) {
+    pcnt_counter_clear(pcntUnit);
+    portENTER_CRITICAL(&s_mutex);
+    s_totalPosition = position;
+    portEXIT_CRITICAL(&s_mutex);
     totalPosition = position;
     lastPosition = position;
-    overflowCount = position / 20000;
-    int16_t remainder = position % 20000;
-    
-    pcnt_counter_clear(pcntUnit);
-    // Note: We can't directly set PCNT counter value, so we adjust with overflowCount
     
     Serial.print("Position set to: "); Serial.println(position);
 }
@@ -246,15 +265,15 @@ void PulseCounter::printStatus() {
 
 // Enable interrupts for overflow detection
 void PulseCounter::enableInterrupt() {
-    if (!isInitialized) return;
+    // if (!isInitialized) return;
     
-    // Install ISR service if not already installed
-    pcnt_isr_service_install(0);
+    // // Install ISR service if not already installed
+    // pcnt_isr_service_install(0);
     
-    // Add ISR handler for this unit
-    pcnt_isr_handler_add(pcntUnit, pcnt_intr_handler, (void*)this);
+    // // Add ISR handler for this unit
+    // pcnt_isr_handler_add(pcntUnit, pcnt_intr_handler, (void*)this);
     
-    Serial.println("PCNT interrupt enabled");
+    // Serial.println("PCNT interrupt enabled");
 }
 
 // Disable interrupts
@@ -314,27 +333,24 @@ bool PulseCounter::hasReachedPosition(int32_t targetPosition, uint32_t tolerance
 }
 
 // Interrupt handler for overflow detection
-void IRAM_ATTR PulseCounter::pcnt_intr_handler(void* arg) {
-    // Get interrupt status for our PCNT unit
-    pcnt_evt_type_t evt_type = PCNT_EVT_H_LIM;
-    
-    // Check if our unit triggered the interrupt
-    if (instance != nullptr) {
-        pcnt_unit_t unit = instance->pcntUnit;
-        
-        // Read current counter value to determine event type
-        int16_t count;
-        pcnt_get_counter_value(unit, &count);
-        
-        // Check for high limit overflow
-        if (count >= 9999) {  // Near high limit
-            overflowCount++;
-            pcnt_counter_clear(unit);
-        }
-        // Check for low limit overflow  
-        else if (count <= -9999) {  // Near low limit
-            overflowCount--;
-            pcnt_counter_clear(unit);
+void IRAM_ATTR pcnt_intr_handler(void* arg) {
+    uint32_t intr_status = PCNT.int_st.val;
+    int unit;
+    uint32_t status; // information on the event type that caused the interrupt
+    for (unit = 0; unit < PCNT_UNIT_MAX; unit++) {
+        if (intr_status & (BIT(unit))) {
+            pcnt_get_event_status((pcnt_unit_t)unit, &status);
+            PCNT.int_clr.val = BIT(unit);
+            if (unit == PCNT_UNIT_0) {  // Check if this is our unit
+                portENTER_CRITICAL(&s_mutex);
+                if (status & PCNT_EVT_H_LIM) { 
+                    s_totalPosition += PCNT_H_LIM_VAL; 
+                } 
+                if (status & PCNT_EVT_L_LIM) { 
+                    s_totalPosition += PCNT_L_LIM_VAL; 
+                } 
+                portEXIT_CRITICAL(&s_mutex);
+            }
         }
     }
 }

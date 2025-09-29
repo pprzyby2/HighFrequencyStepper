@@ -63,7 +63,7 @@ public:
     // Advanced features
     void enableInterrupt();
     void disableInterrupt();
-    int32_t getStepsPerSecond(uint32_t timeWindow = 1000);
+    double getStepsPerSecond(uint32_t timeWindow = 1000);
     
     // Utility functions
     void waitForSteps(uint32_t steps, uint32_t timeout = 10000);

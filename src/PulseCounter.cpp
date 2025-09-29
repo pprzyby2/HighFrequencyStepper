@@ -286,7 +286,7 @@ void PulseCounter::disableInterrupt() {
 }
 
 // Calculate steps per second
-int32_t PulseCounter::getStepsPerSecond(uint32_t timeWindow) {
+double PulseCounter::getStepsPerSecond(uint32_t timeWindow) {
     static uint32_t lastTime = 0;
     static int32_t lastPos = 0;
     
@@ -299,10 +299,10 @@ int32_t PulseCounter::getStepsPerSecond(uint32_t timeWindow) {
         return 0;
     }
     
-    uint32_t deltaTime = currentTime - lastTime;
+    int32_t deltaTime = currentTime - lastTime;
     if (deltaTime >= timeWindow) {
         int32_t deltaPos = currentPos - lastPos;
-        int32_t stepsPerSec = (deltaPos * 1000) / deltaTime;
+        double stepsPerSec = (deltaPos * 1000.0) / deltaTime;
         
         lastTime = currentTime;
         lastPos = currentPos;

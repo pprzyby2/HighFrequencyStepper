@@ -239,10 +239,7 @@ void demonstrateSpeedMeasurement() {
         for (int j = 0; j < 10; j++) {
             int32_t measuredSpeed = pulseCounter.getStepsPerSecond(200);
             if (measuredSpeed != 0) {
-                Serial.print("Measured: "); Serial.print(abs(measuredSpeed)); 
-                Serial.print(" Hz | Error: "); 
-                Serial.print(abs(measuredSpeed) - setSpeed); 
-                Serial.println(" Hz");
+                Serial.printf("Steps: %d Measured: %d Hz | Error: %d Hz\n", measuredSpeed, abs(measuredSpeed), abs(measuredSpeed) - setSpeed);
             }
             delay(200);
         }

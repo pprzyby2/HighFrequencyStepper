@@ -1,0 +1,111 @@
+/*
+ * PWMStepper Example
+ * Demonstrates how to use the PWMStepper library with ESP32 LEDC
+ * 
+ * This example shows:
+ * - Basic stepper control with PWM
+ * - Direction changes
+ * - Speed ramping
+ * - Integration with TMC2209 driver
+ */
+
+#include <Arduino.h>
+#include "PWMStepper.h"
+#include <TMCStepper.h>
+
+// Pin definitions (same as your main.cpp)
+#define EN_PIN           23          // Enable - PURPLE
+#define DIR_PIN          21          // Direction - WHITE  
+#define STEP_PIN         19          // Step - ORANGE
+#define SW_TX            17          // SoftwareSerial receive pin - BROWN
+#define SW_RX            16          // SoftwareSerial transmit pin - YELLOW
+#define DRIVER_ADDRESS   0b00        // TMC2209 Driver address
+#define R_SENSE          0.11f       // SilentStepStick series use 0.11
+
+// Create instances
+PWMStepper pwmStepper(STEP_PIN, DIR_PIN, EN_PIN, 0); // LEDC channel 0
+TMC2209Stepper TMC_Driver(&Serial2, R_SENSE, DRIVER_ADDRESS);
+
+void setup() {
+    Serial.begin(115200);
+    Serial2.begin(115200);
+    delay(1000);
+    
+    Serial.println("=== PWMStepper Example ===");
+    
+    // Initialize PWM stepper
+    pwmStepper.begin();
+    
+    // Initialize TMC2209
+    TMC_Driver.begin();
+    TMC_Driver.toff(5);                 // Enable driver in software
+    TMC_Driver.rms_current(2200);       // Set motor RMS current (mA)
+    TMC_Driver.microsteps(256);          // Set microsteps
+    TMC_Driver.VACTUAL(0);              // Switch off internal stepper control. With STP and DIR pins
+    //TMC_Driver.en_spreadCycle(true);   // Use StealthChop
+    TMC_Driver.pwm_autoscale(true);     // Auto scaling
+    
+    Serial.println("Setup complete!");
+}
+
+void loop() {
+    Serial.println("=== PWM Stepper Demo ===");
+    
+    // Test 1: Basic stepping
+    Serial.println("Test 1: Basic forward steps");
+    pwmStepper.moveSteps(800, 400);     // 800 steps forward at 400 Hz
+    delay(1000);
+    
+    // Test 2: Reverse direction
+    Serial.println("Test 2: Basic reverse steps");
+    pwmStepper.moveSteps(-800, 400);    // 800 steps reverse at 400 Hz
+    delay(1000);
+    
+    // Test 3: Speed ramping
+    Serial.println("Test 3: Speed ramping");
+    for (int freq = 100; freq <= 1000; freq += 100) {
+        Serial.print("Frequency: "); Serial.print(freq); Serial.println(" Hz");
+        pwmStepper.moveSteps(200, freq);  // 200 steps at increasing frequency
+        delay(500);
+    }
+
+    // Test 4: Speed ramping
+    Serial.println("Test 4: Test max speed ramping");
+    pwmStepper.enable();
+    for (int freq = 100; freq <= 5 * 200 * 256; freq += 200) {
+        Serial.print("Frequency: "); Serial.print(freq); Serial.println(" Hz");
+        pwmStepper.startPWM(freq);
+        delay(250);
+    }
+    pwmStepper.disable();
+
+    delay(1000);
+    
+    // Test 4: Continuous PWM with manual control
+    Serial.println("Test 4: Continuous PWM (5 seconds each direction)");
+    
+    // Forward for 5 seconds
+    pwmStepper.setDirection(true);
+    pwmStepper.enable();
+    pwmStepper.startPWM(800);
+    delay(5000);
+    pwmStepper.stopPWM();
+    
+    delay(1000);
+    
+    // Reverse for 5 seconds
+    pwmStepper.setDirection(false);
+    pwmStepper.enable();
+    pwmStepper.startPWM(800);
+    delay(5000);
+    pwmStepper.stopPWM();
+    
+    // Test 5: TMC2209 status check
+    Serial.println("Test 5: TMC2209 Status");
+    Serial.print("Connection test: "); Serial.println(TMC_Driver.test_connection());
+    Serial.print("SG Result: "); Serial.println(TMC_Driver.SG_RESULT());
+    Serial.print("Actual current: "); Serial.println(TMC_Driver.cs2rms(TMC_Driver.cs_actual()));
+    
+    pwmStepper.disable();
+    delay(3000);
+}

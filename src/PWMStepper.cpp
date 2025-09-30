@@ -154,10 +154,35 @@ bool PWMStepper::isInLEDCMode() const {
 
 // LEDC Mode Methods
 void PWMStepper::startLEDCMode(double frequency) {
+    // Auto-adjust resolution based on frequency for optimal performance
+    uint8_t optimalResolution = ledcResolution;
+    
+    // Calculate optimal resolution for the requested frequency
+    // ESP32 LEDC clock is typically 80MHz
+    if (frequency > 312500) {      // > 312.5kHz requires 7-bit or less
+        optimalResolution = 7;     // Max ~625kHz
+    } else if (frequency > 156250) { // > 156.25kHz requires 8-bit or less  
+        optimalResolution = 8;     // Max ~312.5kHz
+    } else if (frequency > 78125) {  // > 78.125kHz requires 9-bit or less
+        optimalResolution = 9;     // Max ~156.25kHz
+    } else {
+        optimalResolution = 10;    // Max ~78.125kHz, good resolution
+    }
+    
+    // Update resolution if it changed
+    if (optimalResolution != ledcResolution) {
+        ledcResolution = optimalResolution;
+        Serial.print("Auto-adjusted LEDC resolution to ");
+        Serial.print(ledcResolution);
+        Serial.print(" bits for ");
+        Serial.print(frequency);
+        Serial.println(" Hz");
+    }
+    
     // Update LEDC frequency
     ledcFrequency = frequency;
     
-    // Reconfigure LEDC with new frequency
+    // Reconfigure LEDC with new frequency and resolution
     ledcSetup(ledcChannel, ledcFrequency, ledcResolution);
     ledcAttachPin(stepPin, ledcChannel);
     
@@ -364,4 +389,11 @@ void PWMStepper::setLEDCChannel(uint8_t channel) {
         Serial.print("LEDC channel set to "); 
         Serial.println(channel);
     }
+}
+
+// Get maximum LEDC frequency for current resolution
+double PWMStepper::getMaxLEDCFrequency() const {
+    // ESP32 LEDC clock source is typically 80MHz
+    const double clockSource = 80000000.0; // 80MHz
+    return clockSource / (1 << ledcResolution);
 }

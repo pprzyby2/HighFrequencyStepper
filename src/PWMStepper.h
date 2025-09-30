@@ -82,6 +82,9 @@ public:
     // Advanced functions
     void setLEDCResolution(uint8_t resolution);
     void setLEDCChannel(uint8_t channel);
+    
+    // Get maximum LEDC frequency for current resolution
+    double getMaxLEDCFrequency() const;
 };
 
 #endif // PWMSTEPPER_H

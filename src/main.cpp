@@ -436,7 +436,7 @@ void testHighSpeedAcceleration() {
     pwmStepper.setDirection(true);
     
     // Test speeds from 1kHz to 200kHz
-    uint32_t testSpeeds[] = {1000, 5000, 10000, 25000, 50000, 75000, 100000, 150000, 200000};
+    uint32_t testSpeeds[] = {1000, 5000, 10000, 25000, 50000, 75000, 100000, 150000, 200000, 250000, 300000, 350000, 400000, 450000, 500000};
     int numSpeeds = sizeof(testSpeeds) / sizeof(testSpeeds[0]);
     
     Serial.println("Testing acceleration profile...");
@@ -450,7 +450,7 @@ void testHighSpeedAcceleration() {
         uint32_t startTime = millis();
         
         pwmStepper.startPWM(speed);
-        delay(500); // Run for 500ms at each speed
+        delay(1000); // Run for 1000ms at each speed
         pwmStepper.stopPWM();
         
         uint32_t endTime = millis();

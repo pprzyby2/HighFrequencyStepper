@@ -436,7 +436,7 @@ void testHighSpeedAcceleration() {
     pwmStepper.setDirection(true);
     
     // Test speeds from 1kHz to 200kHz
-    uint32_t testSpeeds[] = {1000, 5000, 10000, 25000, 50000, 75000, 100000, 150000, 200000, 250000, 300000, 350000, 400000, 450000, 500000};
+    uint32_t testSpeeds[] = {1000, 5000, 10000, 25000, 50000, 75000, 100000, 150000, 200000, 250000, 300000, 350000, 400000}; // In my setup max is ~400kHz (using 256 microsteps)
     int numSpeeds = sizeof(testSpeeds) / sizeof(testSpeeds[0]);
     
     Serial.println("Testing acceleration profile...");

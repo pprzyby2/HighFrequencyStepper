@@ -1,5 +1,11 @@
 #include "PWMStepper.h"
 
+// Global instance pointer for timer callback
+PWMStepper* currentStepperInstance = nullptr;
+
+// Define frequency threshold (512 Hz)
+const double PWMStepper::FREQUENCY_THRESHOLD = 512.0;
+
 // Constructor
 PWMStepper::PWMStepper(uint8_t stepPin, uint8_t dirPin, uint8_t enablePin, uint8_t ledcChannel) {
     this->stepPin = stepPin;
@@ -11,6 +17,19 @@ PWMStepper::PWMStepper(uint8_t stepPin, uint8_t dirPin, uint8_t enablePin, uint8
     this->isRunning = false;
     this->direction = true;      // Forward by default
     this->currentFreq = 0;
+    this->isLEDCMode = true;     // Default to LEDC mode
+    this->stepTimer = nullptr;
+    this->timerStepState = false;
+    this->timerStepsRemaining = 0;
+    this->timerRunning = false;
+}
+
+// Destructor - ensure proper cleanup
+PWMStepper::~PWMStepper() {
+    stopPWM();
+    if (currentStepperInstance == this) {
+        currentStepperInstance = nullptr;
+    }
 }
 
 // Initialize the stepper
@@ -28,12 +47,17 @@ void PWMStepper::begin() {
     // Setup LEDC channel
     ledcSetup(ledcChannel, ledcFrequency, ledcResolution);
     ledcAttachPin(stepPin, ledcChannel);
+    pinMode(enablePin, OUTPUT);
+
+    // Initialize timer (will be configured when needed)
+    stepTimer = nullptr;
     
     Serial.println("PWMStepper initialized successfully!");
     Serial.print("Step Pin: "); Serial.println(stepPin);
     Serial.print("Dir Pin: "); Serial.println(dirPin);
     Serial.print("Enable Pin: "); Serial.println(enablePin);
     Serial.print("LEDC Channel: "); Serial.println(ledcChannel);
+    Serial.print("Frequency Threshold: "); Serial.print(FREQUENCY_THRESHOLD); Serial.println(" Hz");
 }
 
 // Set direction
@@ -48,40 +72,53 @@ void PWMStepper::enable() {
 }
 
 // Disable the stepper driver
+// Disable the stepper driver
 void PWMStepper::disable() {
     digitalWrite(enablePin, HIGH); // Active LOW
     stopPWM();  // Also stop any running PWM
 }
 
-// Start PWM at specified frequency (steps per second)
-void PWMStepper::startPWM(uint32_t frequency) {
+// Start PWM at specified frequency (steps per second) - Dual Mode
+void PWMStepper::startPWM(double frequency) {
     if (frequency == 0) {
         stopPWM();
         return;
     }
     
-    // Update LEDC frequency
-    ledcFrequency = frequency;
     currentFreq = frequency;
     
-    // Reconfigure LEDC with new frequency
-    ledcSetup(ledcChannel, ledcFrequency, ledcResolution);
-    ledcAttachPin(stepPin, ledcChannel);
-    
-    // Set 50% duty cycle for square wave
-    uint32_t dutyCycle = (1 << ledcResolution) / 2;  // 50% duty cycle
-    ledcWrite(ledcChannel, dutyCycle);
+    // Choose mode based on frequency threshold
+    if (frequency >= FREQUENCY_THRESHOLD) {
+        // High frequency - use LEDC mode
+        Serial.print("Using LEDC mode for frequency: ");
+        Serial.print(frequency);
+        Serial.println(" Hz");
+        
+        isLEDCMode = true;
+        stopTimerMode(); // Stop timer mode if running
+        startLEDCMode(frequency);
+    } else {
+        // Low frequency - use Timer mode
+        Serial.print("Using Timer mode for frequency: ");
+        Serial.print(frequency);
+        Serial.println(" Hz");
+        
+        isLEDCMode = false;
+        stopLEDCMode(); // Stop LEDC mode if running
+        startTimerMode(frequency);
+    }
     
     isRunning = true;
-    
-    Serial.print("PWM started at "); 
-    Serial.print(frequency); 
-    Serial.println(" Hz");
 }
 
-// Stop PWM
+// Stop PWM - Dual Mode
 void PWMStepper::stopPWM() {
-    ledcWrite(ledcChannel, 0);  // 0% duty cycle
+    if (isLEDCMode) {
+        stopLEDCMode();
+    } else {
+        stopTimerMode();
+    }
+    
     digitalWrite(stepPin, LOW); // Ensure pin is LOW
     isRunning = false;
     currentFreq = 0;
@@ -90,7 +127,7 @@ void PWMStepper::stopPWM() {
 }
 
 // Set frequency while running
-void PWMStepper::setFrequency(uint32_t frequency) {
+void PWMStepper::setFrequency(double frequency) {
     if (isRunning) {
         startPWM(frequency);  // Restart with new frequency
     } else {
@@ -108,41 +145,200 @@ bool PWMStepper::getDirection() const {
     return direction;
 }
 
-uint32_t PWMStepper::getFrequency() const {
+double PWMStepper::getFrequency() const {
     return currentFreq;
 }
 
+bool PWMStepper::isInLEDCMode() const {
+    return isLEDCMode;
+}
+
+// LEDC Mode Methods
+void PWMStepper::startLEDCMode(double frequency) {
+    // Update LEDC frequency
+    ledcFrequency = frequency;
+    
+    // Reconfigure LEDC with new frequency
+    ledcSetup(ledcChannel, ledcFrequency, ledcResolution);
+    ledcAttachPin(stepPin, ledcChannel);
+    
+    // Set 50% duty cycle for square wave
+    uint32_t dutyCycle = (1 << ledcResolution) / 2;  // 50% duty cycle
+    ledcWrite(ledcChannel, dutyCycle);
+}
+
+void PWMStepper::stopLEDCMode() {
+    ledcWrite(ledcChannel, 0);  // 0% duty cycle
+}
+
+// Timer Mode Methods
+void PWMStepper::startTimerMode(double frequency) {
+    // Calculate timer period in microseconds
+    // For square wave, we need to toggle every half period
+    uint32_t halfPeriodUs = (uint32_t)(500000.0 / frequency);  // 500000 = 1000000/2
+    
+    // Stop existing timer if running
+    stopTimerMode();
+    
+    // Create and configure timer
+    stepTimer = timerBegin(0, 80, true);  // Timer 0, prescaler 80 (1MHz), count up
+    if (stepTimer == nullptr) {
+        Serial.println("Failed to create timer!");
+        return;
+    }
+    
+    // Attach interrupt - only after successful timer creation
+    timerAttachInterrupt(stepTimer, &PWMStepper::onStepTimer, true);
+    
+    timerAlarmWrite(stepTimer, halfPeriodUs, true);  // Set alarm value, auto-reload
+    
+    // Set up for continuous running
+    timerStepState = false;
+    timerRunning = true;
+    timerStepsRemaining = 0; // 0 means continuous
+    
+    // Set the current instance for the callback
+    currentStepperInstance = this;
+    
+    timerAlarmEnable(stepTimer);  // Enable the alarm
+}
+
+void PWMStepper::stopTimerMode() {
+    if (stepTimer != nullptr) {
+        timerAlarmDisable(stepTimer);
+        timerDetachInterrupt(stepTimer);  // Properly detach interrupt
+        timerEnd(stepTimer);
+        stepTimer = nullptr;
+        timerRunning = false;
+    }
+}
+
+// Static timer callback function
+void IRAM_ATTR PWMStepper::onStepTimer() {
+    // Safety check - ensure instance exists and timer is still running
+    if (currentStepperInstance != nullptr && currentStepperInstance->timerRunning) {
+        currentStepperInstance->handleStepTimer();
+    }
+}
+
+// Timer callback function
+void IRAM_ATTR PWMStepper::handleStepTimer() {
+    // Additional safety check within the interrupt
+    if (!timerRunning || stepTimer == nullptr) {
+        return;
+    }
+    
+    // Toggle step pin
+    timerStepState = !timerStepState;
+    digitalWrite(stepPin, timerStepState ? HIGH : LOW);
+    
+    // If counting steps, decrement on rising edge
+    if (timerStepsRemaining > 0 && timerStepState) {
+        timerStepsRemaining--;
+        if (timerStepsRemaining == 0) {
+            timerRunning = false;
+            if (stepTimer != nullptr) {
+                timerAlarmDisable(stepTimer);
+            }
+        }
+    }
+}
+
 // Move a specific number of steps
-void PWMStepper::step(uint32_t steps, uint32_t frequency, bool dir) {
+void PWMStepper::step(uint32_t steps, double frequency, bool dir) {
     if (steps == 0) return;
     
     setDirection(dir);
     enable();
-    startPWM(frequency);
     
-    // Calculate duration in milliseconds
-    uint32_t duration = (steps * 1000) / frequency;
-    
-    Serial.print("Stepping "); 
-    Serial.print(steps); 
-    Serial.print(" steps at "); 
-    Serial.print(frequency); 
-    Serial.print(" Hz for "); 
-    Serial.print(duration); 
-    Serial.println(" ms");
-    
-    delay(duration);
-    stopPWM();
+    if (frequency >= FREQUENCY_THRESHOLD) {
+        // Use LEDC mode for high frequencies
+        startPWM(frequency);
+        
+        // Calculate duration in milliseconds
+        uint32_t duration = (steps * 1000) / frequency;
+        
+        Serial.print("LEDC stepping ");
+        Serial.print(steps);
+        Serial.print(" steps at ");
+        Serial.print(frequency);
+        Serial.print(" Hz for ");
+        Serial.print(duration);
+        Serial.println(" ms");
+        
+        delay(duration);
+        stopPWM();
+    } else {
+        // Use Timer mode for low frequencies
+        stepTimerMode(steps, frequency, dir);
+    }
 }
 
 // Move steps with automatic direction (positive = forward, negative = reverse)
-void PWMStepper::moveSteps(int32_t steps, uint32_t frequency) {
+void PWMStepper::moveSteps(int32_t steps, double frequency) {
     if (steps == 0) return;
     
     bool dir = steps > 0;
     uint32_t absSteps = abs(steps);
     
     step(absSteps, frequency, dir);
+}
+
+// Timer mode specific step function
+void PWMStepper::stepTimerMode(uint32_t steps, double frequency, bool dir) {
+    if (steps == 0) return;
+    
+    setDirection(dir);
+    enable();
+    
+    // Calculate timer period in microseconds
+    uint32_t halfPeriodUs = (uint32_t)(500000.0 / frequency);
+    
+    // Stop existing timer if running
+    stopTimerMode();
+    
+    // Create and configure timer for precise step count
+    stepTimer = timerBegin(0, 80, true);  // Timer 0, prescaler 80 (1MHz), count up
+    if (stepTimer == nullptr) {
+        Serial.println("Failed to create timer for stepping!");
+        return;
+    }
+    
+    timerAttachInterrupt(stepTimer, &PWMStepper::onStepTimer, true);
+    
+    timerAlarmWrite(stepTimer, halfPeriodUs, true);
+    
+    // Set up for specific step count
+    timerStepState = false;
+    timerRunning = true;
+    timerStepsRemaining = steps;
+    currentStepperInstance = this;
+    
+    Serial.print("Timer stepping ");
+    Serial.print(steps);
+    Serial.print(" steps at ");
+    Serial.print(frequency);
+    Serial.print(" Hz (period: ");
+    Serial.print(halfPeriodUs * 2);
+    Serial.println(" μs)");
+    
+    timerAlarmEnable(stepTimer);
+    
+    // Wait for completion
+    while (timerStepsRemaining > 0 && timerRunning) {
+        delay(1);
+    }
+    
+    // Clean up
+    stopTimerMode();
+    
+    digitalWrite(stepPin, LOW); // Ensure pin is LOW
+    Serial.println("Timer stepping completed");
+}
+
+// Check if timer step is complete
+bool PWMStepper::isTimerStepComplete() const {
+    return (timerStepsRemaining == 0 || !timerRunning);
 }
 
 // Set LEDC resolution (1-16 bits)

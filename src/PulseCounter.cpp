@@ -59,8 +59,8 @@ bool PulseCounter::begin() {
     }
 
     // Configure GPIO pins mapping to PCNT
-    // gpio_matrix_out(pulsePin, SIG_GPIO_OUT_IDX, false, false);      // Normal output
-    // gpio_matrix_in(pulsePin, PCNT_SIG_CH0_IN0_IDX, false);         // Also route to PCNT input
+    //gpio_matrix_out(pulsePin, SIG_GPIO_OUT_IDX, false, false);      // Normal output
+    //gpio_matrix_in(pulsePin, PCNT_SIG_CH0_IN0_IDX, false);         // Also route to PCNT input
     gpio_matrix_out(ctrlPin, SIG_GPIO_OUT_IDX, false, false);      // Normal output  
     gpio_matrix_in(ctrlPin, PCNT_CTRL_CH0_IN0_IDX, false);        // Also route to PCNT control        
     

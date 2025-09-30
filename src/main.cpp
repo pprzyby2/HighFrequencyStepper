@@ -14,11 +14,13 @@
 #include "PWMStepper.h"
 #include "PulseCounter.h"
 #include <TMCStepper.h>
+#include "driver/gpio.h"
 
 // Pin definitions (same as your main.cpp)
 #define EN_PIN           23          // Enable - PURPLE
 #define DIR_PIN          21          // Direction - WHITE  
 #define STEP_PIN         19          // Step - ORANGE
+#define STEP_CNT_PIN     22          // Step - ORANGE (for PulseCounter)
 #define SW_TX            17          // SoftwareSerial receive pin - BROWN
 #define SW_RX            16          // SoftwareSerial transmit pin - YELLOW
 #define DRIVER_ADDRESS   0b00        // TMC2209 Driver address
@@ -26,7 +28,7 @@
 
 // Create instances
 PWMStepper pwmStepper(STEP_PIN, DIR_PIN, EN_PIN, 0); // LEDC channel 0
-PulseCounter pulseCounter(PCNT_UNIT_0, 22, DIR_PIN); // Monitor step pin
+PulseCounter pulseCounter(PCNT_UNIT_0, STEP_CNT_PIN, DIR_PIN); // Monitor step pin
 TMC2209Stepper TMC_Driver(&Serial2, R_SENSE, DRIVER_ADDRESS);
 
 // Test results tracking
@@ -131,8 +133,12 @@ void setup() {
     TMC_Driver.microsteps(256);         // Set microsteps
     TMC_Driver.VACTUAL(0);              // Switch off internal stepper control
     TMC_Driver.en_spreadCycle(false);   // Toggle spreadCycle
-    TMC_Driver.pwm_autoscale(true);     // Needed for stealthChop    
-    
+    TMC_Driver.pwm_autoscale(true);     // Needed for stealthChop
+
+    // Print pin configuration
+    Serial.println("Pin Configuration:");
+    Serial.printf("STEP_PIN: %d, DIR_PIN: %d, STEP_CNT_PIN: %d, EN_PIN: %d\n", 
+                 STEP_PIN, DIR_PIN, STEP_CNT_PIN, EN_PIN);
     Serial.println("Setup complete!");
     delay(2000);
 }
@@ -518,27 +524,25 @@ void testLowSpeedPrecision() {
                 uint32_t stepStart = millis();
                 
                 // Generate single pulse
-                digitalWrite(STEP_PIN, HIGH);
-                delayMicroseconds(100); // 100us pulse width
-                digitalWrite(STEP_PIN, LOW);
+                pwmStepper.startPWM(freq);
                 
                 // Wait for next step
                 while (millis() - stepStart < stepPeriod) {
                     delay(1);
                 }
+                digitalWrite(STEP_PIN, !digitalRead(STEP_PIN)); // Ensure step pin is low
                 
-                Serial.print("    Step "); Serial.print(step + 1);
-                Serial.print(" | Position: "); Serial.println(pulseCounter.getPosition());
+                Serial.printf("    Step %d | Position: %d\n", step + 1, pulseCounter.getPosition());
             }
             
             int32_t endPos = pulseCounter.getPosition();
             int32_t stepsCounted = endPos - startPos;
             accuracy = (float)stepsCounted / 10.0 * 100.0;
             testPassed = (stepsCounted >= 9 && stepsCounted <= 11); // ±1 step tolerance
-            
-            Serial.print("  Expected: 10 steps, Counted: "); Serial.println(stepsCounted);
-            Serial.print("  Accuracy: "); Serial.print(accuracy, 1); Serial.println("%");
-            
+
+            Serial.printf("  Expected: 10 steps, Counted: %d\n", stepsCounted);
+            Serial.printf("  Accuracy: %.1f%%\n", accuracy);
+
             String freqName = "Ultra-low " + String(freq, 1) + "Hz";
             addTestResult(freqName, testPassed, 
                           "Expected: 10, Got: " + String(stepsCounted), accuracy);

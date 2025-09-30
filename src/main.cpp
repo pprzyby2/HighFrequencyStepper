@@ -176,9 +176,9 @@ void demonstrateClosedLoopControl() {
     pulseCounter.resetPosition();
     int32_t targetPosition = 32000; // Target position
     uint32_t tolerance = 0;        // Position tolerance
-    
-    Serial.print("Moving to position: "); Serial.println(targetPosition);
-    
+
+    Serial.printf("Moving to position: %d\n", targetPosition);
+
     pwmStepper.enable();
     pwmStepper.setDirection(targetPosition > 0);
     pwmStepper.startPWM(1000);
@@ -519,20 +519,17 @@ void testLowSpeedPrecision() {
             
             Serial.print("  Step period: "); Serial.print(stepPeriod); Serial.println("ms");
             
+
             // Generate 10 steps manually with precise timing
             for (int step = 0; step < 10; step++) {
                 uint32_t stepStart = millis();
-                
                 // Generate single pulse
                 pwmStepper.startPWM(freq);
-                
                 // Wait for next step
                 while (millis() - stepStart < stepPeriod) {
                     delay(1);
                 }
-                digitalWrite(STEP_PIN, !digitalRead(STEP_PIN)); // Ensure step pin is low
-                
-                Serial.printf("    Step %d | Position: %d\n", step + 1, pulseCounter.getPosition());
+                Serial.printf("    Step %d | Position: %d Interrupt cnt: %d\n", step + 1, pulseCounter.getPosition(), pwmStepper.getInterruptCount());
             }
             
             int32_t endPos = pulseCounter.getPosition();

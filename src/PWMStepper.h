@@ -26,6 +26,7 @@ private:
     volatile bool timerStepState;
     volatile uint32_t timerStepsRemaining;
     volatile bool timerRunning;
+    volatile int interruptCount;
     
     // Timer callback function
     static void IRAM_ATTR onStepTimer();
@@ -68,6 +69,7 @@ public:
     bool getDirection() const;
     double getFrequency() const;
     bool isInLEDCMode() const;
+    int getInterruptCount() const { return interruptCount; } // For debugging
     
     // Utility functions
     void step(uint32_t steps, double frequency, bool dir);

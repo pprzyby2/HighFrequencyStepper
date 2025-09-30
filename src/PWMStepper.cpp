@@ -47,7 +47,6 @@ void PWMStepper::begin() {
     // Setup LEDC channel
     ledcSetup(ledcChannel, ledcFrequency, ledcResolution);
     ledcAttachPin(stepPin, ledcChannel);
-    pinMode(enablePin, OUTPUT);
 
     // Initialize timer (will be configured when needed)
     stepTimer = nullptr;
@@ -169,6 +168,7 @@ void PWMStepper::startLEDCMode(double frequency) {
 
 void PWMStepper::stopLEDCMode() {
     ledcWrite(ledcChannel, 0);  // 0% duty cycle
+    ledcDetachPin(stepPin);
 }
 
 // Timer Mode Methods
@@ -179,6 +179,9 @@ void PWMStepper::startTimerMode(double frequency) {
     
     // Stop existing timer if running
     stopTimerMode();
+    int stepPinState = digitalRead(stepPin); // Read current state
+    pinMode(stepPin, OUTPUT);
+    digitalWrite(stepPin, !stepPinState); // Start new period with toggled state
     
     // Create and configure timer
     stepTimer = timerBegin(0, 80, true);  // Timer 0, prescaler 80 (1MHz), count up
@@ -191,11 +194,11 @@ void PWMStepper::startTimerMode(double frequency) {
     timerAttachInterrupt(stepTimer, &PWMStepper::onStepTimer, true);
     
     timerAlarmWrite(stepTimer, halfPeriodUs, true);  // Set alarm value, auto-reload
-    
     // Set up for continuous running
     timerStepState = false;
     timerRunning = true;
     timerStepsRemaining = 0; // 0 means continuous
+    interruptCount = 0;
     
     // Set the current instance for the callback
     currentStepperInstance = this;
@@ -221,6 +224,8 @@ void IRAM_ATTR PWMStepper::onStepTimer() {
     }
 }
 
+
+
 // Timer callback function
 void IRAM_ATTR PWMStepper::handleStepTimer() {
     // Additional safety check within the interrupt
@@ -230,7 +235,8 @@ void IRAM_ATTR PWMStepper::handleStepTimer() {
     
     // Toggle step pin
     timerStepState = !timerStepState;
-    digitalWrite(stepPin, timerStepState ? HIGH : LOW);
+    digitalWrite(stepPin, !digitalRead(stepPin));
+    interruptCount++;
     
     // If counting steps, decrement on rising edge
     if (timerStepsRemaining > 0 && timerStepState) {

@@ -183,11 +183,11 @@ void PWMStepper::startLEDCMode(double frequency) {
     ledcFrequency = frequency;
     
     // Reconfigure LEDC with new frequency and resolution
-    ledcSetup(ledcChannel, ledcFrequency, ledcResolution);
+    ledcSetup(ledcChannel, ledcFrequency, 4); // 4-bit resolution (0-15) - we use half the range for 50% duty cycle anyway
     ledcAttachPin(stepPin, ledcChannel);
     
     // Set 50% duty cycle for square wave
-    uint32_t dutyCycle = (1 << ledcResolution) / 2;  // 50% duty cycle
+    uint32_t dutyCycle = 8;  // 50% duty cycle
     ledcWrite(ledcChannel, dutyCycle);
 }
 

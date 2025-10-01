@@ -5,17 +5,22 @@
 #define PCNT_H_LIM_VAL      INT16_MAX
 #define PCNT_L_LIM_VAL      INT16_MIN
 
-// Static member initialization
-int16_t PulseCounter::overflowCount = 0;
-PulseCounter* PulseCounter::instance = nullptr;
-
-// Static variables for interrupt handling
-static int32_t s_totalPosition = 0;
-static portMUX_TYPE s_mutex = portMUX_INITIALIZER_UNLOCKED;
 static pcnt_isr_handle_t s_isr_handle = NULL;
-static int32_t totalPosition = 0;
-static portMUX_TYPE mutex = portMUX_INITIALIZER_UNLOCKED;
-static pcnt_isr_handle_t high_low_limit_event_isr_handle = NULL;
+// Static member initialization - support for 4 pulse counters
+PulseCounter* PulseCounter::instances[PCNT_UNIT_MAX] = {nullptr};
+
+// Static variables for interrupt handling - one for each PCNT unit
+static portMUX_TYPE s_mutex[PCNT_UNIT_MAX] = {
+    portMUX_INITIALIZER_UNLOCKED,
+    portMUX_INITIALIZER_UNLOCKED,
+    portMUX_INITIALIZER_UNLOCKED,
+    portMUX_INITIALIZER_UNLOCKED,
+    portMUX_INITIALIZER_UNLOCKED,
+    portMUX_INITIALIZER_UNLOCKED,
+    portMUX_INITIALIZER_UNLOCKED,
+    portMUX_INITIALIZER_UNLOCKED
+};
+static int32_t s_totalPosition[PCNT_UNIT_MAX] = {0, 0, 0, 0, 0, 0, 0, 0};
 
 // Constructor
 PulseCounter::PulseCounter(pcnt_unit_t unit, uint8_t pulsePin, uint8_t ctrlPin) {
@@ -23,14 +28,14 @@ PulseCounter::PulseCounter(pcnt_unit_t unit, uint8_t pulsePin, uint8_t ctrlPin) 
     this->pcntChannel = PCNT_CHANNEL_0;
     this->pulsePin = pulsePin;
     this->ctrlPin = ctrlPin;
-    this->currentCount = 0;
-    this->totalPosition = 0;
     this->lastPosition = 0;
     this->isInitialized = false;
     this->countingEnabled = false;
     
-    // Set static instance for interrupt handling
-    instance = this;
+    // Register this instance for the specific PCNT unit
+    if (unit < PCNT_UNIT_MAX) {
+        instances[unit] = this;
+    }
 }
 
 // Initialize the pulse counter
@@ -116,12 +121,14 @@ void PulseCounter::reset() {
     if (!isInitialized) return;
     
     pcnt_counter_clear(pcntUnit);
-    currentCount = 0;
-    totalPosition = 0;
+    portENTER_CRITICAL(&s_mutex[pcntUnit]);
+    s_totalPosition[pcntUnit] = 0;
+    portEXIT_CRITICAL(&s_mutex[pcntUnit]);
     lastPosition = 0;
-    overflowCount = 0;
     
-    Serial.println("Pulse counter reset");
+    Serial.print("Pulse counter unit ");
+    Serial.print(pcntUnit);
+    Serial.println(" reset");
 }
 
 // Pause counting
@@ -143,7 +150,7 @@ void PulseCounter::resume() {
 // Get raw count from PCNT unit
 int16_t PulseCounter::getRawCount() {
     if (!isInitialized) return 0;
-    
+    int16_t currentCount;
     pcnt_get_counter_value(pcntUnit, &currentCount);
     return currentCount;
 }
@@ -153,9 +160,9 @@ int32_t PulseCounter::getPosition() {
     if (!isInitialized) return 0;
 
     int16_t count = getRawCount();
-    portENTER_CRITICAL(&s_mutex);
-    int32_t position = s_totalPosition + count;
-    portEXIT_CRITICAL(&s_mutex);
+    portENTER_CRITICAL(&s_mutex[pcntUnit]);
+    int32_t position = s_totalPosition[pcntUnit] + count;
+    portEXIT_CRITICAL(&s_mutex[pcntUnit]);
     return position;
 }
 
@@ -167,13 +174,15 @@ int32_t PulseCounter::getAbsolutePosition() {
 // Set current position
 void PulseCounter::setPosition(int32_t position) {
     pcnt_counter_clear(pcntUnit);
-    portENTER_CRITICAL(&s_mutex);
-    s_totalPosition = position;
-    portEXIT_CRITICAL(&s_mutex);
-    totalPosition = position;
+    portENTER_CRITICAL(&s_mutex[pcntUnit]);
+    s_totalPosition[pcntUnit] = position;
+    portEXIT_CRITICAL(&s_mutex[pcntUnit]);
     lastPosition = position;
     
-    Serial.print("Position set to: "); Serial.println(position);
+    Serial.print("Unit ");
+    Serial.print(pcntUnit);
+    Serial.print(" position set to: ");
+    Serial.println(position);
 }
 
 // Reset position to zero
@@ -259,7 +268,6 @@ void PulseCounter::printStatus() {
     Serial.print("Position: "); Serial.println(getPosition());
     Serial.print("Direction: "); Serial.println(getDirection() ? "Forward" : "Reverse");
     Serial.print("Running: "); Serial.println(isRunning() ? "Yes" : "No");
-    Serial.print("Overflow Count: "); Serial.println(overflowCount);
     Serial.println("===========================");
 }
 
@@ -332,24 +340,27 @@ bool PulseCounter::hasReachedPosition(int32_t targetPosition, uint32_t tolerance
     return abs(getPosition() - targetPosition) <= tolerance;
 }
 
-// Interrupt handler for overflow detection
+// Interrupt handler for overflow detection - handles all PCNT units
 void IRAM_ATTR pcnt_intr_handler(void* arg) {
     uint32_t intr_status = PCNT.int_st.val;
     int unit;
     uint32_t status; // information on the event type that caused the interrupt
+    
     for (unit = 0; unit < PCNT_UNIT_MAX; unit++) {
         if (intr_status & (BIT(unit))) {
             pcnt_get_event_status((pcnt_unit_t)unit, &status);
             PCNT.int_clr.val = BIT(unit);
-            if (unit == PCNT_UNIT_0) {  // Check if this is our unit
-                portENTER_CRITICAL(&s_mutex);
+            
+            // Handle overflow for the specific unit
+            if (PulseCounter::instances[unit] != nullptr) {
+                portENTER_CRITICAL(&s_mutex[unit]);
                 if (status & PCNT_EVT_H_LIM) { 
-                    s_totalPosition += PCNT_H_LIM_VAL; 
+                    s_totalPosition[unit] += PCNT_H_LIM_VAL; 
                 } 
                 if (status & PCNT_EVT_L_LIM) { 
-                    s_totalPosition += PCNT_L_LIM_VAL; 
+                    s_totalPosition[unit] += PCNT_L_LIM_VAL; 
                 } 
-                portEXIT_CRITICAL(&s_mutex);
+                portEXIT_CRITICAL(&s_mutex[unit]);
             }
         }
     }

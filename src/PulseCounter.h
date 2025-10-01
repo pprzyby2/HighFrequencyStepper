@@ -13,17 +13,14 @@ private:
     uint8_t pulsePin;
     uint8_t ctrlPin;
     
-    int16_t currentCount;
-    int32_t totalPosition;
     int32_t lastPosition;
     bool isInitialized;
     bool countingEnabled;
     
-    // Overflow handling
-    static int16_t overflowCount;
-    static PulseCounter* instance;
-
 public:
+    // Static array to hold instances for interrupt handling
+    static PulseCounter* instances[PCNT_UNIT_MAX];
+    
     // Constructor
     PulseCounter(pcnt_unit_t unit = PCNT_UNIT_0, uint8_t pulsePin = GPIO_NUM_19, uint8_t ctrlPin = GPIO_NUM_21);
     

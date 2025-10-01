@@ -15,6 +15,7 @@
 #include "PulseCounter.h"
 #include <TMCStepper.h>
 #include "driver/gpio.h"
+#include "HighFrequencyStepper.h"
 
 // Pin definitions (same as your main.cpp)
 #define EN_PIN           23          // Enable - PURPLE
@@ -28,7 +29,7 @@
 
 // Create instances
 PWMStepper pwmStepper(STEP_PIN, DIR_PIN, EN_PIN, 0); // LEDC channel 0
-PulseCounter pulseCounter(PCNT_UNIT_0, STEP_CNT_PIN, DIR_PIN); // Monitor step pin
+PulseCounter pulseCounter(PCNT_UNIT_1, STEP_CNT_PIN, DIR_PIN); // Monitor step pin
 TMC2209Stepper TMC_Driver(&Serial2, R_SENSE, DRIVER_ADDRESS);
 
 // Test results tracking
@@ -132,7 +133,7 @@ void setup() {
     TMC_Driver.rms_current(2200);       // Set motor RMS current (mA)
     TMC_Driver.microsteps(256);         // Set microsteps
     TMC_Driver.VACTUAL(0);              // Switch off internal stepper control
-    TMC_Driver.en_spreadCycle(false);   // Toggle spreadCycle
+    TMC_Driver.en_spreadCycle(true);   // Toggle spreadCycle
     TMC_Driver.pwm_autoscale(true);     // Needed for stealthChop
 
     // Print pin configuration
@@ -436,7 +437,7 @@ void testHighSpeedAcceleration() {
     pwmStepper.setDirection(true);
     
     // Test speeds from 1kHz to 200kHz
-    uint32_t testSpeeds[] = {1000, 5000, 10000, 25000, 50000, 75000, 100000, 150000, 200000, 250000, 300000, 350000, 400000}; // In my setup max is ~400kHz (using 256 microsteps)
+    uint32_t testSpeeds[] = {1000, 5000, 10000, 25000, 50000, 75000, 100000, 150000, 200000, 250000, 300000, 350000, 400000}; // In my setup max is ~300kHz (using 256 microsteps)
     int numSpeeds = sizeof(testSpeeds) / sizeof(testSpeeds[0]);
     
     Serial.println("Testing acceleration profile...");
@@ -446,10 +447,14 @@ void testHighSpeedAcceleration() {
         uint32_t speed = testSpeeds[i];
         Serial.print("Setting speed to: "); Serial.print(speed); Serial.println(" Hz");
         
-        int32_t startPos = pulseCounter.getPosition();
-        uint32_t startTime = millis();
-        
+        for (int acceleration = 0; acceleration <= speed; acceleration += 2560) {
+            pwmStepper.startPWM(acceleration);
+            Serial.print("  Acceleration: "); Serial.print(acceleration); Serial.println(" Hz/s");
+            delay(100); // Let it stabilize
+        }
         pwmStepper.startPWM(speed);
+        int32_t startPos = pulseCounter.getPosition();
+        uint32_t startTime = millis();        
         delay(1000); // Run for 1000ms at each speed
         pwmStepper.stopPWM();
         

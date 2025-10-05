@@ -16,6 +16,8 @@ private:
     bool isRunning;
     bool direction;  // true = forward, false = reverse
     double currentFreq;
+    double acceleration;
+    double targetFreq;
     
     // Dual mode operation
     static const double FREQUENCY_THRESHOLD; // 512 Hz threshold
@@ -62,7 +64,9 @@ public:
     void stopPWM();
     
     // Set frequency while running
+    void setTargetFrequency(double frequency);
     void setFrequency(double frequency);
+    void setAcceleration(double accel);
     
     // Get current status
     bool isEnabled() const;
@@ -74,6 +78,7 @@ public:
     // Utility functions
     void step(uint32_t steps, double frequency, bool dir);
     void moveSteps(int32_t steps, double frequency);
+    void update();
     
     // Timer mode specific functions
     void stepTimerMode(uint32_t steps, double frequency, bool dir);

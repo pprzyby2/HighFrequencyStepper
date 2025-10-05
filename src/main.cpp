@@ -26,10 +26,16 @@
 #define SW_RX            16          // SoftwareSerial transmit pin - YELLOW
 #define DRIVER_ADDRESS   0b00        // TMC2209 Driver address
 #define R_SENSE          0.11f       // SilentStepStick series use 0.11
+#define N23_EN_PIN     15            // N23 Enable pin - BLUE
+#define N23_DIR_PIN    18             // N23 Direction pin - GREEN
+#define N23_STEP_PIN   4             // N23 Step pin - RED
+#define N23_CNT_PIN   23             // N23 Step - RED (for PulseCounter)
 
 // Create instances
-PWMStepper pwmStepper(STEP_PIN, DIR_PIN, EN_PIN, 0); // LEDC channel 0
-PulseCounter pulseCounter(PCNT_UNIT_1, STEP_CNT_PIN, DIR_PIN); // Monitor step pin
+PWMStepper pwmStepperN23(STEP_PIN, DIR_PIN, EN_PIN, 0); // LEDC channel 0
+PWMStepper pwmStepper(N23_STEP_PIN, N23_DIR_PIN, N23_EN_PIN, 1); // LEDC channel 1
+PulseCounter pulseCounterN23(PCNT_UNIT_1, STEP_CNT_PIN, DIR_PIN); // Monitor step pin
+PulseCounter pulseCounter(PCNT_UNIT_0, N23_STEP_PIN, N23_DIR_PIN); // Monitor N23 step pin
 TMC2209Stepper TMC_Driver(&Serial2, R_SENSE, DRIVER_ADDRESS);
 
 // Test results tracking
@@ -121,11 +127,15 @@ void setup() {
     
     // Initialize PWM stepper
     pwmStepper.begin();
-    
+    pwmStepperN23.begin();
+    //digitalWrite(N23_EN_PIN, LOW);  // Disabled by default (active LOW)
+
     // Initialize pulse counter
     pulseCounter.begin();
+    pulseCounterN23.begin();
     //pulseCounter.enableInterrupt();  // Enable overflow handling
     pulseCounter.start();            // Start counting
+    pulseCounterN23.start();        // Start counting for N23
     
     // Initialize TMC2209
     TMC_Driver.begin();
@@ -144,31 +154,31 @@ void setup() {
     delay(2000);
 }
 
-void demonstratePositionTracking() {
+void demonstratePositionTracking(PWMStepper& stepper, PulseCounter& counter) {
     Serial.println("\n=== Position Tracking Demo ===");
-    
-    pulseCounter.resetPosition();
-    
+
+    counter.resetPosition();
+
     // Move forward and track position
     Serial.println("Moving 1600 steps forward...");
-    pwmStepper.enable();
-    pwmStepper.setDirection(true);
-    pwmStepper.startPWM(800);
+    stepper.enable();
+    stepper.setDirection(true);
+    stepper.startPWM(800);
     
     for (int i = 0; i < 20; i++) {
         delay(100);
-        Serial.print("Position: "); 
-        Serial.print(pulseCounter.getPosition());
+        Serial.print("Position: ");
+        Serial.print(counter.getPosition());
         Serial.print(" | Speed: ");
-        Serial.print(pulseCounter.getStepsPerSecond(500));
+        Serial.print(counter.getStepsPerSecond(500));
         Serial.println(" steps/sec");
     }
-    
-    pwmStepper.stopPWM();
+
+    stepper.stopPWM();
     delay(1000);
-    
-    Serial.print("Final position: "); 
-    Serial.println(pulseCounter.getPosition());
+
+    Serial.print("Final position: ");
+    Serial.println(counter.getPosition());
 }
 
 void demonstrateClosedLoopControl() {
@@ -435,6 +445,7 @@ void testHighSpeedAcceleration() {
     pulseCounter.resetPosition();
     pwmStepper.enable();
     pwmStepper.setDirection(true);
+    pwmStepper.setAcceleration(50000); // 50kHz/s acceleration
     
     // Test speeds from 1kHz to 200kHz
     uint32_t testSpeeds[] = {1000, 5000, 10000, 25000, 50000, 75000, 100000, 150000, 200000, 250000, 300000, 350000, 400000}; // In my setup max is ~300kHz (using 256 microsteps)
@@ -447,15 +458,18 @@ void testHighSpeedAcceleration() {
         uint32_t speed = testSpeeds[i];
         Serial.print("Setting speed to: "); Serial.print(speed); Serial.println(" Hz");
         
-        for (int acceleration = 0; acceleration <= speed; acceleration += 2560) {
-            pwmStepper.startPWM(acceleration);
-            Serial.print("  Acceleration: "); Serial.print(acceleration); Serial.println(" Hz/s");
-            delay(100); // Let it stabilize
+        // for (int acceleration = 0; acceleration <= speed; acceleration += 2560) {
+        //     pwmStepper.startPWM(acceleration);
+        //     Serial.print("  Acceleration: "); Serial.print(acceleration); Serial.println(" Hz/s");
+        //     delay(100); // Let it stabilize
+        // }
+        pwmStepper.setTargetFrequency(speed);
+        while (pwmStepper.getFrequency() < speed) {
+            delay(10); // Wait until target speed is reached
         }
-        pwmStepper.startPWM(speed);
         int32_t startPos = pulseCounter.getPosition();
         uint32_t startTime = millis();        
-        delay(1000); // Run for 1000ms at each speed
+        delay(5000); // Run for 5000ms at each speed
         pwmStepper.stopPWM();
         
         uint32_t endTime = millis();
@@ -486,6 +500,9 @@ void testHighSpeedAcceleration() {
         delay(200); // Brief pause between speeds
     }
     
+    pwmStepper.stopPWM();
+    pwmStepper.setAcceleration(0); // Reset acceleration
+
     // Overall high speed test result
     bool overallHighSpeedOK = (passedSpeeds >= 7); // At least 7/9 speeds must pass
     addTestResult("High Speed Overall", overallHighSpeedOK, 
@@ -524,7 +541,7 @@ void testLowSpeedPrecision() {
             
             Serial.print("  Step period: "); Serial.print(stepPeriod); Serial.println("ms");
             
-
+            uint32_t testStart = millis();
             // Generate 10 steps manually with precise timing
             for (int step = 0; step < 10; step++) {
                 uint32_t stepStart = millis();
@@ -534,7 +551,7 @@ void testLowSpeedPrecision() {
                 while (millis() - stepStart < stepPeriod) {
                     delay(1);
                 }
-                Serial.printf("    Step %d | Position: %d Interrupt cnt: %d\n", step + 1, pulseCounter.getPosition(), pwmStepper.getInterruptCount());
+                Serial.printf("    Step %d | Position: %d Time: %f s\n", step + 1, pulseCounter.getPosition(), 0.001 * (millis() - testStart));
             }
             
             int32_t endPos = pulseCounter.getPosition();
@@ -632,7 +649,8 @@ void loop() {
     printSystemStatus();
     delay(1000);
     
-    demonstratePositionTracking();
+    demonstratePositionTracking(pwmStepper, pulseCounter);
+    demonstratePositionTracking(pwmStepperN23, pulseCounterN23);
     delay(2000);
     
     demonstrateClosedLoopControl();

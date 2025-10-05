@@ -1,10 +1,39 @@
 #include "PWMStepper.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/portmacro.h"
+#include "freertos/task.h"
+#include "freertos/queue.h"
+#include "esp_attr.h"
+#include "esp_log.h"
+#include <vector>
+
+
 
 // Global instance pointer for timer callback
 PWMStepper* currentStepperInstance = nullptr;
 
 // Define frequency threshold (512 Hz)
 const double PWMStepper::FREQUENCY_THRESHOLD = 512.0;
+const uint64_t PWM_STEPPER_TIMER_DELAY = 10000; // 10ms
+esp_timer_handle_t pwm_stepper_timer = nullptr;
+static std::vector<PWMStepper*> pwmStepperInstances;
+
+static void ARDUINO_ISR_ATTR onPWMStepperTimer(void *arg)
+{
+    for (auto stepper : pwmStepperInstances) {
+        stepper->update();
+    }
+}
+
+void initTimers() {
+    const esp_timer_create_args_t periodic_pwm_stepper_timer_args = {
+        .callback = &onPWMStepperTimer, // link the call back
+        .arg = nullptr,                 // no argument
+        .name = "pwm-stepper-timer"      
+    };
+    ESP_ERROR_CHECK(esp_timer_create(&periodic_pwm_stepper_timer_args, &pwm_stepper_timer));
+    ESP_ERROR_CHECK(esp_timer_start_periodic(pwm_stepper_timer, PWM_STEPPER_TIMER_DELAY)); // Start PWM stepper timer with a delay of 10ms
+}
 
 // Constructor
 PWMStepper::PWMStepper(uint8_t stepPin, uint8_t dirPin, uint8_t enablePin, uint8_t ledcChannel) {
@@ -22,6 +51,7 @@ PWMStepper::PWMStepper(uint8_t stepPin, uint8_t dirPin, uint8_t enablePin, uint8
     this->timerStepState = false;
     this->timerStepsRemaining = 0;
     this->timerRunning = false;
+    this->acceleration = 0;
 }
 
 // Destructor - ensure proper cleanup
@@ -30,6 +60,7 @@ PWMStepper::~PWMStepper() {
     if (currentStepperInstance == this) {
         currentStepperInstance = nullptr;
     }
+    pwmStepperInstances.erase(std::remove(pwmStepperInstances.begin(), pwmStepperInstances.end(), this), pwmStepperInstances.end());
 }
 
 // Initialize the stepper
@@ -50,6 +81,11 @@ void PWMStepper::begin() {
 
     // Initialize timer (will be configured when needed)
     stepTimer = nullptr;
+
+    pwmStepperInstances.push_back(this);
+    if (pwm_stepper_timer == nullptr) {
+        initTimers();
+    }
     
     Serial.println("PWMStepper initialized successfully!");
     Serial.print("Step Pin: "); Serial.println(stepPin);
@@ -57,6 +93,25 @@ void PWMStepper::begin() {
     Serial.print("Enable Pin: "); Serial.println(enablePin);
     Serial.print("LEDC Channel: "); Serial.println(ledcChannel);
     Serial.print("Frequency Threshold: "); Serial.print(FREQUENCY_THRESHOLD); Serial.println(" Hz");
+    Serial.printf("PWM Stepper instances: %d\n", (int)pwmStepperInstances.size());
+}
+
+void PWMStepper::update() {
+    if (acceleration != 0 && isRunning) {
+        if (currentFreq < targetFreq) {
+            currentFreq += acceleration * (PWM_STEPPER_TIMER_DELAY / 1000000.0); // Convert delay to seconds
+            if (currentFreq > targetFreq) {
+                currentFreq = targetFreq;
+            }
+            startPWM(currentFreq);
+        } else if (currentFreq > targetFreq) {
+            currentFreq -= acceleration * (PWM_STEPPER_TIMER_DELAY / 1000000.0); // Convert delay to seconds
+            if (currentFreq < targetFreq) {
+                currentFreq = targetFreq;
+            }
+            startPWM(currentFreq);
+        }
+    }
 }
 
 // Set direction
@@ -89,19 +144,11 @@ void PWMStepper::startPWM(double frequency) {
     // Choose mode based on frequency threshold
     if (frequency >= FREQUENCY_THRESHOLD) {
         // High frequency - use LEDC mode
-        Serial.print("Using LEDC mode for frequency: ");
-        Serial.print(frequency);
-        Serial.println(" Hz");
-        
         isLEDCMode = true;
         stopTimerMode(); // Stop timer mode if running
         startLEDCMode(frequency);
     } else {
         // Low frequency - use Timer mode
-        Serial.print("Using Timer mode for frequency: ");
-        Serial.print(frequency);
-        Serial.println(" Hz");
-        
         isLEDCMode = false;
         stopLEDCMode(); // Stop LEDC mode if running
         startTimerMode(frequency);
@@ -125,6 +172,11 @@ void PWMStepper::stopPWM() {
     Serial.println("PWM stopped");
 }
 
+void PWMStepper::setTargetFrequency(double frequency) {
+    targetFreq = frequency;
+    isRunning = true; // Ensure the stepper is marked as running
+}
+
 // Set frequency while running
 void PWMStepper::setFrequency(double frequency) {
     if (isRunning) {
@@ -133,6 +185,10 @@ void PWMStepper::setFrequency(double frequency) {
         ledcFrequency = frequency;
         currentFreq = frequency;
     }
+}
+
+void PWMStepper::setAcceleration(double accel) {
+    acceleration = accel;
 }
 
 // Get current status
@@ -155,30 +211,8 @@ bool PWMStepper::isInLEDCMode() const {
 // LEDC Mode Methods
 void PWMStepper::startLEDCMode(double frequency) {
     // Auto-adjust resolution based on frequency for optimal performance
-    uint8_t optimalResolution = ledcResolution;
-    
-    // Calculate optimal resolution for the requested frequency
-    // ESP32 LEDC clock is typically 80MHz
-    if (frequency > 312500) {      // > 312.5kHz requires 7-bit or less
-        optimalResolution = 7;     // Max ~625kHz
-    } else if (frequency > 156250) { // > 156.25kHz requires 8-bit or less  
-        optimalResolution = 8;     // Max ~312.5kHz
-    } else if (frequency > 78125) {  // > 78.125kHz requires 9-bit or less
-        optimalResolution = 9;     // Max ~156.25kHz
-    } else {
-        optimalResolution = 10;    // Max ~78.125kHz, good resolution
-    }
-    
-    // Update resolution if it changed
-    if (optimalResolution != ledcResolution) {
-        ledcResolution = optimalResolution;
-        Serial.print("Auto-adjusted LEDC resolution to ");
-        Serial.print(ledcResolution);
-        Serial.print(" bits for ");
-        Serial.print(frequency);
-        Serial.println(" Hz");
-    }
-    
+    uint8_t optimalResolution = ledcResolution;    
+   
     // Update LEDC frequency
     ledcFrequency = frequency;
     

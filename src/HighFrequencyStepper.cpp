@@ -98,7 +98,7 @@ bool HighFrequencyStepper::initializeStepper(uint8_t index) {
     pwmSteppers[index]->begin();
     
     // Initialize PulseCounter
-    if (!pulseCounters[index]->begin()) {
+    if (!pulseCounters[index]->begin(configs[index].invertDirection)) {
         Serial.println("ERROR: Failed to initialize PulseCounter");
         return false;
     }
@@ -222,7 +222,7 @@ bool HighFrequencyStepper::moveRelative(uint8_t index, int32_t steps, double fre
     uint32_t absSteps = abs(steps);
     
     // Update target position
-    status[index].targetPosition = pulseCounters[index]->getPosition() + steps;
+    status[index].targetPosition = getPosition(index) + steps;
     status[index].isMoving = true;
     status[index].targetFrequency = frequency;
     
@@ -233,15 +233,15 @@ bool HighFrequencyStepper::moveRelative(uint8_t index, int32_t steps, double fre
 
     pwmSteppers[index]->setDirection(direction);
     pwmSteppers[index]->startPWM(frequency);
-    while (micros() < expectedEndTime && abs(pulseCounters[index]->getPosition() - status[index].targetPosition) > 1) {
-        vTaskDelay(10); // Yield to other tasks
+    while (micros() < expectedEndTime && abs(getPosition(index) - status[index].targetPosition) > 1) {
+        vTaskDelay(1); // Yield to other tasks
     }
     pwmSteppers[index]->stopPWM();
 
     // Update position tracking
     updatePosition(index);
-    
-    return abs(pulseCounters[index]->getPosition() - status[index].targetPosition) > 1 ? false : true;
+
+    return abs(getPosition(index) - status[index].targetPosition) > 1 ? false : true;
 }
 
 // Start continuous movement

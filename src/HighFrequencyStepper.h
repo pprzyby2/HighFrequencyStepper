@@ -37,7 +37,7 @@ struct StepperConfig {
     
     // PCNT configuration
     pcnt_unit_t pcntUnit;    // PCNT unit (PCNT_UNIT_0 to PCNT_UNIT_7)
-    
+
     // Default constructor
     StepperConfig() {
         stepPin = 0;

@@ -22,10 +22,10 @@ public:
     static PulseCounter* instances[PCNT_UNIT_MAX];
     
     // Constructor
-    PulseCounter(pcnt_unit_t unit = PCNT_UNIT_0, uint8_t pulsePin = GPIO_NUM_19, uint8_t ctrlPin = GPIO_NUM_21);
+    PulseCounter(pcnt_unit_t unit, uint8_t pulsePin, uint8_t ctrlPin);
     
     // Initialize the pulse counter
-    bool begin();
+    bool begin(bool invertDirection = false);
     
     // Control functions
     void start();

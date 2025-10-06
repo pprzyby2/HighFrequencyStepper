@@ -82,6 +82,7 @@ void setup() {
     configTMC2209.dirPin = DIR_PIN;            // Direction pin
     configTMC2209.enablePin = EN_PIN;         // Enable pin
     configTMC2209.pcntUnit = PCNT_UNIT_0; // Pulse counter unit 0
+    configTMC2209.invertDirection = true; // Reverse counting
     configTMC2209.stepCountPin = STEP_CNT_PIN;      // Pulse counter pin
     configTMC2209.uart = &Serial2;             // UART for TMC
     configTMC2209.driverAddress = 0b00;   // TMC2209 address
@@ -98,6 +99,7 @@ void setup() {
     configN23.dirPin = N23_DIR_PIN;             // Different direction pin
     configN23.enablePin = N23_EN_PIN;         // Can share enable pin
     configN23.stepCountPin = N23_CNT_PIN;       // Different pulse counter pin
+    configN23.invertDirection = false;           // No reverse counting
     configN23.uart = NULL;                   // The same UART for TMC
     configN23.driverAddress = 0b01;              // Different UART TMC address
     configN23.rSense = 0.11f;         
@@ -211,8 +213,10 @@ void runAllTests() {
     
     // Run all tests in sequence
     Serial.println("\n[1/7] Running direction tests...");
-    testDirectionChanges(pwmStepper, pulseCounter);
-    
+    for (int i = 0; i < stepperController.getStepperCount(); i++) {
+        testDirectionChanges(stepperController, i);
+    }
+
     Serial.println("\n[2/7] Running high speed tests...");
     testHighSpeedAcceleration(pwmStepper, pulseCounter);
     
@@ -250,7 +254,9 @@ void processSerialInput() {
         switch (testChoice) {
             case TEST_BASIC_DIRECTION:
                 clearTestResults();
-                testDirectionChanges(pwmStepper, pulseCounter);
+                for (int i = 0; i < stepperController.getStepperCount(); i++) {
+                    testDirectionChanges(stepperController, i);
+                }
                 printTestSummary();
                 break;
                 

@@ -39,13 +39,13 @@ PulseCounter::PulseCounter(pcnt_unit_t unit, uint8_t pulsePin, uint8_t ctrlPin) 
 }
 
 // Initialize the pulse counter
-bool PulseCounter::begin() {
+bool PulseCounter::begin(bool invertDirection) {
     // Configure PCNT unit
     pcnt_config_t pcnt_config = {
         .pulse_gpio_num = pulsePin,
         .ctrl_gpio_num = ctrlPin,
-        .lctrl_mode = PCNT_MODE_REVERSE,    // Reverse counting direction when control signal is low
-        .hctrl_mode = PCNT_MODE_KEEP,       // Keep counting direction when control signal is high
+        .lctrl_mode = invertDirection ? PCNT_MODE_KEEP : PCNT_MODE_REVERSE,    // Reverse counting direction when control signal is low
+        .hctrl_mode = invertDirection ? PCNT_MODE_REVERSE : PCNT_MODE_KEEP,       // Keep counting direction when control signal is high
         .pos_mode = PCNT_COUNT_INC,         // Count up on positive edge
         .neg_mode = PCNT_COUNT_DIS,         // Don't count on negative edge
         .counter_h_lim = PCNT_H_LIM_VAL,             // High limit

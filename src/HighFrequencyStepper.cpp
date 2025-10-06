@@ -66,19 +66,15 @@ bool HighFrequencyStepper::addStepper(uint8_t index, const StepperConfig& config
     }
     
     // Configure UART port
-    configureUART(index);
+    uartPorts[index] = configs[index].uart;    
     
     // Create TMC2209 instance
-    tmcDrivers[index] = new TMC2209Stepper(uartPorts[index], config.rSense, config.driverAddress);
-    if (!tmcDrivers[index]) {
-        Serial.println("ERROR: Failed to create TMC2209Stepper instance");
-        delete pwmSteppers[index];
-        delete pulseCounters[index];
-        pwmSteppers[index] = nullptr;
-        pulseCounters[index] = nullptr;
-        return false;
+    if (uartPorts[index] != nullptr) {
+        tmcDrivers[index] = new TMC2209Stepper(uartPorts[index], config.rSense, config.driverAddress);
+    } else {
+        tmcDrivers[index] = nullptr; // No TMC driver if no UART
     }
-    
+
     // Update stepper count
     if (index >= stepperCount) {
         stepperCount = index + 1;
@@ -89,31 +85,6 @@ bool HighFrequencyStepper::addStepper(uint8_t index, const StepperConfig& config
     Serial.println(" successfully");
     
     return true;
-}
-
-// Configure UART for TMC communication
-void HighFrequencyStepper::configureUART(uint8_t index) {
-    // Map UART ports based on index
-    switch (index) {
-        case 0:
-            uartPorts[index] = &Serial1;
-            Serial1.begin(115200, SERIAL_8N1, configs[index].rxPin, configs[index].txPin);
-            break;
-        case 1:
-            uartPorts[index] = &Serial2;
-            Serial2.begin(115200, SERIAL_8N1, configs[index].rxPin, configs[index].txPin);
-            break;
-        case 2:
-            // For ESP32, we might need to use SoftwareSerial or additional hardware serial
-            uartPorts[index] = &Serial1; // Share Serial1 with different address
-            break;
-        case 3:
-            uartPorts[index] = &Serial2; // Share Serial2 with different address
-            break;
-        default:
-            uartPorts[index] = &Serial2; // Fallback
-            break;
-    }
 }
 
 // Initialize a specific stepper
@@ -131,14 +102,19 @@ bool HighFrequencyStepper::initializeStepper(uint8_t index) {
         Serial.println("ERROR: Failed to initialize PulseCounter");
         return false;
     }
+    pulseCounters[index]->start();
     
     // Initialize TMC2209
-    tmcDrivers[index]->begin();
-    tmcDrivers[index]->toff(5);                    // Enable driver
-    tmcDrivers[index]->rms_current(configs[index].rmsCurrent);
-    tmcDrivers[index]->microsteps(configs[index].microsteps);
-    tmcDrivers[index]->pwm_autoscale(true);        // Enable automatic current scaling
-    tmcDrivers[index]->en_spreadCycle(false);      // Use StealthChop by default
+    if (tmcDrivers[index]) {
+        tmcDrivers[index]->begin();
+        tmcDrivers[index]->toff(5);                    // Enable driver
+        tmcDrivers[index]->rms_current(configs[index].rmsCurrent);
+        tmcDrivers[index]->microsteps(configs[index].microsteps);
+        tmcDrivers[index]->pwm_autoscale(true);        // Enable automatic current scaling
+        tmcDrivers[index]->en_spreadCycle(false);      // Use StealthChop by default
+    } else {
+        Serial.println("WARNING: TMC2209 driver not initialized");
+    }
     
     // Initialize status
     status[index].isInitialized = true;
@@ -179,6 +155,7 @@ bool HighFrequencyStepper::setMicrosteps(uint8_t index, uint16_t microsteps) {
     }
     
     configs[index].microsteps = microsteps;
+    if (!tmcDrivers[index]) return false;
     tmcDrivers[index]->microsteps(microsteps);
     
     Serial.print("Stepper ");
@@ -194,6 +171,7 @@ bool HighFrequencyStepper::setRMSCurrent(uint8_t index, uint16_t currentMA) {
     if (!validateStepperIndex(index)) return false;
     
     configs[index].rmsCurrent = currentMA;
+    if (!tmcDrivers[index]) return false;
     tmcDrivers[index]->rms_current(currentMA);
     
     Serial.print("Stepper ");
@@ -244,17 +222,26 @@ bool HighFrequencyStepper::moveRelative(uint8_t index, int32_t steps, double fre
     uint32_t absSteps = abs(steps);
     
     // Update target position
-    status[index].targetPosition = status[index].currentPosition + steps;
+    status[index].targetPosition = pulseCounters[index]->getPosition() + steps;
     status[index].isMoving = true;
     status[index].targetFrequency = frequency;
     
     // Execute movement
-    pwmSteppers[index]->step(absSteps, frequency, direction);
-    
+    uint32_t currentMicros = micros();
+    double stepDuration = 1000000.0 / frequency;
+    double expectedEndTime = currentMicros + (1.05* absSteps * stepDuration);
+
+    pwmSteppers[index]->setDirection(direction);
+    pwmSteppers[index]->startPWM(frequency);
+    while (micros() < expectedEndTime && abs(pulseCounters[index]->getPosition() - status[index].targetPosition) > 1) {
+        vTaskDelay(10); // Yield to other tasks
+    }
+    pwmSteppers[index]->stopPWM();
+
     // Update position tracking
     updatePosition(index);
     
-    return true;
+    return abs(pulseCounters[index]->getPosition() - status[index].targetPosition) > 1 ? false : true;
 }
 
 // Start continuous movement
@@ -498,6 +485,7 @@ bool HighFrequencyStepper::isStallDetected(uint8_t index) {
     if (!validateStepperIndex(index)) return false;
     
     // Check TMC StallGuard status
+    if (!tmcDrivers[index]) return false;
     uint32_t drv_status = tmcDrivers[index]->DRV_STATUS();
     return (drv_status & 0x1000000) != 0; // StallGuard flag
 }
@@ -514,10 +502,21 @@ bool HighFrequencyStepper::selfTest(uint8_t index) {
     Serial.println("...");
     
     // Test 1: Communication with TMC driver
-    uint32_t version = tmcDrivers[index]->version();
-    if (version == 0 || version == 0xFFFFFFFF) {
-        Serial.println("FAIL: TMC communication error");
-        return false;
+    if (tmcDrivers[index]) {
+        int previousMicrosteps = tmcDrivers[index]->microsteps();
+        int expectMicrosteps = 32; // Any value except 256 (default return value if no communication)
+        tmcDrivers[index]->microsteps(expectMicrosteps);
+        int actualMicrosteps = tmcDrivers[index]->microsteps(); // Read back
+        // Restore previous microsteps
+        tmcDrivers[index]->microsteps(previousMicrosteps);
+        if (expectMicrosteps != actualMicrosteps) {
+            Serial.println("FAIL: TMC communication error");
+            return false;
+        } else {
+            Serial.printf("TMC Driver Version: 0x%08X\n", tmcDrivers[index]->version());
+        }
+    } else {
+        Serial.println("WARN: No TMC driver instance");
     }
     
     // Test 2: Enable/disable functionality
@@ -534,7 +533,7 @@ bool HighFrequencyStepper::selfTest(uint8_t index) {
     int32_t endPos = getPosition(index);
     
     if (abs(endPos - startPos - 100) > 5) { // Allow 5 step tolerance
-        Serial.println("FAIL: Movement accuracy");
+        Serial.printf("FAIL: Movement accuracy (Expected: %d, Actual: %d)\n", startPos + 100, endPos);
         return false;
     }
     

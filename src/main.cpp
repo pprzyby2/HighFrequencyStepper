@@ -1,673 +1,335 @@
 /*
- * PWMStepper + PulseCounter Integration Example
- * Demonstrates position feedback using PCNT module
+ * ESP32 Stepper Motor Test Suite
+ * Comprehensive testing for PWMStepper + PulseCounter + TMC2209 integration
  * 
- * This example shows:
- * - PWM step generation with LEDC
- * - Position tracking with PCNT
- * - Closed-loop position control
- * - Speed measurement
- * - TMC2209 integration
+ * This example demonstrates:
+ * - High-speed PWM step generation (up to 400kHz)
+ * - Precision position tracking with PCNT
+ * - TMC2209 stepper driver integration
+ * - Organized test suite with separate test files
  */
 
 #include <Arduino.h>
 #include "PWMStepper.h"
 #include "PulseCounter.h"
-#include <TMCStepper.h>
-#include "driver/gpio.h"
 #include "HighFrequencyStepper.h"
+#include <TMCStepper.h>
 
-// Pin definitions (same as your main.cpp)
+// Include organized test files
+#include "TestUtils.h"
+#include "DirectionTests.h"
+#include "SpeedTests.h"
+#include "OverflowTests.h"
+#include "DemoTests.h"
+
+// Pin definitions
 #define EN_PIN           23          // Enable - PURPLE
 #define DIR_PIN          21          // Direction - WHITE  
 #define STEP_PIN         19          // Step - ORANGE
-#define STEP_CNT_PIN     22          // Step - ORANGE (for PulseCounter)
-#define SW_TX            17          // SoftwareSerial receive pin - BROWN
-#define SW_RX            16          // SoftwareSerial transmit pin - YELLOW
+#define STEP_CNT_PIN     22          // Step counter input
+#define SW_TX            17          // TMC2209 TX - BROWN
+#define SW_RX            16          // TMC2209 RX - YELLOW
 #define DRIVER_ADDRESS   0b00        // TMC2209 Driver address
 #define R_SENSE          0.11f       // SilentStepStick series use 0.11
-#define N23_EN_PIN     15            // N23 Enable pin - BLUE
-#define N23_DIR_PIN    18             // N23 Direction pin - GREEN
-#define N23_STEP_PIN   4             // N23 Step pin - RED
-#define N23_CNT_PIN   23             // N23 Step - RED (for PulseCounter)
 
-// Create instances
-PWMStepper pwmStepperN23(STEP_PIN, DIR_PIN, EN_PIN, 0); // LEDC channel 0
-PWMStepper pwmStepper(N23_STEP_PIN, N23_DIR_PIN, N23_EN_PIN, 1); // LEDC channel 1
-PulseCounter pulseCounterN23(PCNT_UNIT_1, STEP_CNT_PIN, DIR_PIN); // Monitor step pin
-PulseCounter pulseCounter(PCNT_UNIT_0, N23_STEP_PIN, N23_DIR_PIN); // Monitor N23 step pin
-TMC2209Stepper TMC_Driver(&Serial2, R_SENSE, DRIVER_ADDRESS);
+// N23 stepper pins (second stepper)
+#define N23_EN_PIN       15          // N23 Enable pin - BLUE
+#define N23_DIR_PIN      18          // N23 Direction pin - GREEN
+#define N23_STEP_PIN     4           // N23 Step pin - RED
+#define N23_CNT_PIN      23          // N23 Step counter input
 
-// Test results tracking
-struct TestResult {
-    String testName;
-    bool passed;
-    String details;
-    float accuracy;
+// Create instances for primary stepper
+PWMStepper pwmStepper(STEP_PIN, DIR_PIN, EN_PIN, 0);
+PulseCounter pulseCounter(PCNT_UNIT_0, STEP_CNT_PIN, DIR_PIN);
+TMC2209Stepper driver(&Serial2, R_SENSE, DRIVER_ADDRESS);
+
+// Create instances for N23 stepper (optional second stepper)
+PWMStepper pwmStepperN23(N23_STEP_PIN, N23_DIR_PIN, N23_EN_PIN, 1);
+PulseCounter pulseCounterN23(PCNT_UNIT_1, N23_CNT_PIN, N23_DIR_PIN);
+
+// HighFrequencyStepper controller
+HighFrequencyStepper stepperController;
+
+// Function declarations
+void printTestMenu();
+void runAllTests();
+void processSerialInput();
+
+// Test menu options
+enum TestOption {
+    TEST_BASIC_DIRECTION = 1,
+    TEST_HIGH_SPEED = 2,
+    TEST_LOW_SPEED = 3,
+    TEST_OVERFLOW = 4,
+    DEMO_POSITION_TRACKING = 5,
+    DEMO_CLOSED_LOOP = 6,
+    DEMO_SPEED_MEASUREMENT = 7,
+    RUN_ALL_TESTS = 8,
+    SHOW_SYSTEM_STATUS = 9,
+    RESET_POSITION = 0
 };
-
-TestResult testResults[20]; // Array to store test results
-int testCount = 0;
-
-void addTestResult(String name, bool passed, String details = "", float accuracy = 0.0) {
-    if (testCount < 20) {
-        testResults[testCount].testName = name;
-        testResults[testCount].passed = passed;
-        testResults[testCount].details = details;
-        testResults[testCount].accuracy = accuracy;
-        testCount++;
-    }
-}
-
-void printTestSummary() {
-    Serial.println("\n########################################");
-    Serial.println("#          FINAL TEST SUMMARY          #");
-    Serial.println("########################################");
-    
-    int passedTests = 0;
-    int failedTests = 0;
-    
-    Serial.println("Test Name                    | Status | Details");
-    Serial.println("---------------------------------------------|--------");
-    
-    for (int i = 0; i < testCount; i++) {
-        String status = testResults[i].passed ? "PASS" : "FAIL";
-        
-        // Format test name (max 28 chars)
-        String formattedName = testResults[i].testName;
-        while (formattedName.length() < 28) {
-            formattedName += " ";
-        }
-        if (formattedName.length() > 28) {
-            formattedName = formattedName.substring(0, 25) + "...";
-        }
-        
-        Serial.print(formattedName);
-        Serial.print(" | ");
-        Serial.print(status);
-        Serial.print("   | ");
-        
-        if (testResults[i].accuracy > 0) {
-            Serial.print(testResults[i].accuracy, 1);
-            Serial.print("% - ");
-        }
-        Serial.println(testResults[i].details);
-        
-        if (testResults[i].passed) {
-            passedTests++;
-        } else {
-            failedTests++;
-        }
-    }
-    
-    Serial.println("---------------------------------------------|--------");
-    Serial.print("TOTAL TESTS: "); Serial.print(testCount);
-    Serial.print(" | PASSED: "); Serial.print(passedTests);
-    Serial.print(" | FAILED: "); Serial.println(failedTests);
-    
-    float successRate = (float)passedTests / testCount * 100.0;
-    Serial.print("SUCCESS RATE: "); Serial.print(successRate, 1); Serial.println("%");
-    
-    Serial.println("\n########################################");
-    if (failedTests == 0) {
-        Serial.println("#         ALL TESTS PASSED! ✓          #");
-    } else {
-        Serial.println("#       SOME TESTS FAILED! ✗           #");
-        Serial.println("#     CHECK SYSTEM CONFIGURATION       #");
-    }
-    Serial.println("########################################\n");
-}
 
 void setup() {
     Serial.begin(115200);
     Serial2.begin(115200);
+    delay(2000);
+    
+    Serial.println("=== HighFrequencyStepper Example ===");
+    
+    // Configuration for Stepper 0
+    StepperConfig configTMC2209;
+    configTMC2209.stepPin = STEP_PIN;           // Step pin
+    configTMC2209.dirPin = DIR_PIN;            // Direction pin
+    configTMC2209.enablePin = EN_PIN;         // Enable pin
+    configTMC2209.pcntUnit = PCNT_UNIT_0; // Pulse counter unit 0
+    configTMC2209.stepCountPin = STEP_CNT_PIN;      // Pulse counter pin
+    configTMC2209.uart = &Serial2;             // UART for TMC
+    configTMC2209.driverAddress = 0b00;   // TMC2209 address
+    configTMC2209.rSense = 0.11f;         // Current sense resistor
+    configTMC2209.microsteps = 16;        // 16 microsteps
+    configTMC2209.rmsCurrent = 800;       // 800mA RMS current
+    configTMC2209.stepsPerRev = 200;      // 200 steps per revolution
+    configTMC2209.maxFrequency = 400000;  // 100kHz max frequency
+    configTMC2209.ledcChannel = 0;        // LEDC channel 0
+
+    // Configuration for Stepper 1 (example second stepper)
+    StepperConfig configN23;
+    configN23.stepPin = N23_STEP_PIN;           // Different step pin
+    configN23.dirPin = N23_DIR_PIN;             // Different direction pin
+    configN23.enablePin = N23_EN_PIN;         // Can share enable pin
+    configN23.stepCountPin = N23_CNT_PIN;       // Different pulse counter pin
+    configN23.uart = NULL;                   // The same UART for TMC
+    configN23.driverAddress = 0b01;              // Different UART TMC address
+    configN23.rSense = 0.11f;         
+    configN23.microsteps = 32;        // Different microsteps
+    configN23.rmsCurrent = 1000;      // Different current
+    configN23.stepsPerRev = 200;
+    configN23.maxFrequency = 10000;   // Different max frequency
+    configN23.ledcChannel = 1;        // Different LEDC channel
+    configN23.pcntUnit = PCNT_UNIT_1; // Different pulse counter unit
+
+    // Add steppers to controller
+    if (!stepperController.addStepper(0, configTMC2209)) {
+        Serial.println("Failed to add stepper 0");
+        return;
+    }
+
+    if (!stepperController.addStepper(1, configN23)) {
+        Serial.println("Failed to add stepper 1");
+        return;
+    }
+    
+    // Initialize all steppers
+    if (!stepperController.initializeAll()) {
+        Serial.println("Failed to initialize steppers");
+        return;
+    }
+    
+    // Enable all steppers
+    stepperController.enableAll();
+    
+    // Print initial status
+    stepperController.printAllStatus();
+    
+    // Perform self-test
+    if (stepperController.selfTestAll()) {
+        Serial.println("All steppers ready for operation!");
+    } else {
+        Serial.println("Some steppers failed self-test!");
+    }
+}
+
+
+void setup2() {
+    Serial.begin(115200);
+    Serial2.begin(115200);
     delay(1000);
     
-    Serial.println("=== PWMStepper + PulseCounter Example ===");
+    Serial.println("=== ESP32 Stepper Motor Test Suite ===");
+    Serial.println("Organized test framework for PWMStepper + PulseCounter + TMC2209");
     
-    // Initialize PWM stepper
+    // Initialize primary stepper
+    Serial.println("\nInitializing primary stepper...");
     pwmStepper.begin();
-    pwmStepperN23.begin();
-    //digitalWrite(N23_EN_PIN, LOW);  // Disabled by default (active LOW)
-
-    // Initialize pulse counter
     pulseCounter.begin();
+    pulseCounter.start();
+    
+    // Initialize N23 stepper (optional)
+    Serial.println("Initializing N23 stepper...");
+    pwmStepperN23.begin();
     pulseCounterN23.begin();
-    //pulseCounter.enableInterrupt();  // Enable overflow handling
-    pulseCounter.start();            // Start counting
-    pulseCounterN23.start();        // Start counting for N23
+    pulseCounterN23.start();
     
     // Initialize TMC2209
-    TMC_Driver.begin();
-    TMC_Driver.toff(5);                 // Enable driver in software
-    TMC_Driver.rms_current(2200);       // Set motor RMS current (mA)
-    TMC_Driver.microsteps(256);         // Set microsteps
-    TMC_Driver.VACTUAL(0);              // Switch off internal stepper control
-    TMC_Driver.en_spreadCycle(true);   // Toggle spreadCycle
-    TMC_Driver.pwm_autoscale(true);     // Needed for stealthChop
-
-    // Print pin configuration
-    Serial.println("Pin Configuration:");
-    Serial.printf("STEP_PIN: %d, DIR_PIN: %d, STEP_CNT_PIN: %d, EN_PIN: %d\n", 
-                 STEP_PIN, DIR_PIN, STEP_CNT_PIN, EN_PIN);
-    Serial.println("Setup complete!");
-    delay(2000);
-}
-
-void demonstratePositionTracking(PWMStepper& stepper, PulseCounter& counter) {
-    Serial.println("\n=== Position Tracking Demo ===");
-
-    counter.resetPosition();
-
-    // Move forward and track position
-    Serial.println("Moving 1600 steps forward...");
-    stepper.enable();
-    stepper.setDirection(true);
-    stepper.startPWM(800);
+    Serial.println("Initializing TMC2209 driver...");
+    driver.begin();
+    driver.toff(5);
+    driver.rms_current(2200);
+    driver.microsteps(256);
+    driver.VACTUAL(0);
+    driver.en_spreadCycle(true);
+    driver.pwm_autoscale(true);
     
-    for (int i = 0; i < 20; i++) {
-        delay(100);
-        Serial.print("Position: ");
-        Serial.print(counter.getPosition());
-        Serial.print(" | Speed: ");
-        Serial.print(counter.getStepsPerSecond(500));
-        Serial.println(" steps/sec");
-    }
-
-    stepper.stopPWM();
-    delay(1000);
-
-    Serial.print("Final position: ");
-    Serial.println(counter.getPosition());
-}
-
-void demonstrateClosedLoopControl() {
-    Serial.println("\n=== Closed-Loop Position Control ===");
-    
-    pulseCounter.resetPosition();
-    int32_t targetPosition = 32000; // Target position
-    uint32_t tolerance = 0;        // Position tolerance
-
-    Serial.printf("Moving to position: %d\n", targetPosition);
-
-    pwmStepper.enable();
-    pwmStepper.setDirection(targetPosition > 0);
-    pwmStepper.startPWM(1000);
-    
-    uint32_t startTime = millis();
-    uint32_t timeout = 10000; // 10 second timeout
-    
-    while (millis() - startTime < timeout) {
-        int32_t currentPos = pulseCounter.getPosition();
-        int32_t error = targetPosition - currentPos;
-        
-        if (abs(error) <= tolerance) {
-            Serial.println("Target reached!");
-            break;
-        }
-        
-        // Simple proportional control for speed
-        uint32_t speed = constrain(abs(error) * 2, 100, 20000);
-        pwmStepper.setFrequency(speed);
-        
-        // Update direction if needed
-        bool newDirection = error > 0;
-        if (newDirection != pwmStepper.getDirection()) {
-            pwmStepper.setDirection(newDirection);
-        }
-        
-        // Print status every 200ms
-        static uint32_t lastPrint = 0;
-        if (millis() - lastPrint > 200) {
-            Serial.print("Pos: "); Serial.print(currentPos);
-            Serial.print(" | Target: "); Serial.print(targetPosition);
-            Serial.print(" | Error: "); Serial.print(error);
-            Serial.print(" | Speed: "); Serial.println(speed);
-            lastPrint = millis();
-        }
-        
-        delay(10);
+    // Test TMC2209 connection
+    if (driver.test_connection()) {
+        Serial.println("TMC2209 connection: OK");
+    } else {
+        Serial.println("TMC2209 connection: FAILED");
     }
     
-    pwmStepper.stopPWM();
-    Serial.print("Final position: "); 
-    Serial.print(pulseCounter.getPosition());
-    Serial.print(" (Target: "); Serial.print(targetPosition); Serial.println(")");
+    Serial.println("\nSystem initialization complete!");
+    printSystemStatus(pwmStepper, pulseCounter, driver);
+    
+    // Clear any previous test results
+    clearTestResults();
+    
+    Serial.println("\n==================================================");
+    printTestMenu();
 }
 
-void demonstrateSpeedMeasurement() {
-    Serial.println("\n=== Speed Measurement Demo ===");
-    
-    pwmStepper.enable();
-    
-    // Test different speeds
-    uint32_t testSpeeds[] = {200, 500, 1000, 1500, 2000};
-    
-    for (int i = 0; i < 5; i++) {
-        uint32_t setSpeed = testSpeeds[i];
-        Serial.print("Setting speed to: "); Serial.print(setSpeed); Serial.println(" Hz");
-        
-        pwmStepper.setDirection(i % 2 == 0); // Alternate direction
-        pwmStepper.startPWM(setSpeed);
-        
-        delay(1000); // Let it stabilize
-        
-        // Measure speed over 2 seconds
-        for (int j = 0; j < 10; j++) {
-            int32_t measuredSpeed = pulseCounter.getStepsPerSecond(200);
-            if (measuredSpeed != 0) {
-                Serial.printf("Steps: %d Measured: %d Hz | Error: %d Hz\n", measuredSpeed, abs(measuredSpeed), abs(measuredSpeed) - setSpeed);
-            }
-            delay(200);
-        }
-        
-        pwmStepper.stopPWM();
-        delay(500);
-    }
+void printTestMenu() {
+    Serial.println("\n=== TEST MENU ===");
+    Serial.println("1. Basic Direction Tests");
+    Serial.println("2. High Speed Tests (up to 400kHz)");
+    Serial.println("3. Low Speed Precision Tests");
+    Serial.println("4. Counter Overflow Tests");
+    Serial.println("5. Position Tracking Demo");
+    Serial.println("6. Closed Loop Control Demo");
+    Serial.println("7. Speed Measurement Demo");
+    Serial.println("8. Run ALL Tests");
+    Serial.println("9. Show System Status");
+    Serial.println("0. Reset Position Counter");
+    Serial.println("\nEnter test number (or 'h' for help): ");
 }
 
-void printSystemStatus() {
-    Serial.println("\n=== System Status ===");
+void runAllTests() {
+    Serial.println("\n============================================================");
+    Serial.println("RUNNING COMPLETE TEST SUITE");
+    Serial.println("============================================================");
     
-    // PWM Stepper status
-    Serial.println("PWM Stepper:");
-    Serial.print("  Enabled: "); Serial.println(pwmStepper.isEnabled() ? "Yes" : "No");
-    Serial.print("  Direction: "); Serial.println(pwmStepper.getDirection() ? "Forward" : "Reverse");
-    Serial.print("  Frequency: "); Serial.print(pwmStepper.getFrequency()); Serial.println(" Hz");
+    clearTestResults();
     
-    // Pulse Counter status
-    Serial.println("Pulse Counter:");
-    pulseCounter.printStatus();
+    // Run all tests in sequence
+    Serial.println("\n[1/7] Running direction tests...");
+    testDirectionChanges(pwmStepper, pulseCounter);
     
-    // TMC2209 status
-    Serial.println("TMC2209:");
-    Serial.print("  Connection: "); Serial.println(TMC_Driver.test_connection());
-    Serial.print("  SG Result: "); Serial.println(TMC_Driver.SG_RESULT());
-    Serial.print("  Current: "); Serial.print(TMC_Driver.cs2rms(TMC_Driver.cs_actual())); Serial.println(" mA");
-}
-
-void testDirectionChanges() {
-    Serial.println("\n=== Direction Change Test ===");
+    Serial.println("\n[2/7] Running high speed tests...");
+    testHighSpeedAcceleration(pwmStepper, pulseCounter);
     
-    pulseCounter.resetPosition();
-    pwmStepper.enable();
+    Serial.println("\n[3/7] Running low speed precision tests...");
+    testLowSpeedPrecision(pwmStepper, pulseCounter);
     
-    // Test 1: Forward direction
-    Serial.println("Testing FORWARD direction (1000 steps)...");
-    pwmStepper.setDirection(true);
-    delay(100); // Let direction settle
+    Serial.println("\n[4/7] Running overflow tests...");
+    testCounterOverflow(pwmStepper, pulseCounter);
     
-    int32_t startPos = pulseCounter.getPosition();
-    pwmStepper.startPWM(800);
-    delay(1250); // 1000 steps at 800 Hz = 1.25 seconds
-    pwmStepper.stopPWM();
+    Serial.println("\n[5/7] Running position tracking demo...");
+    demonstratePositionTracking(pwmStepper, pulseCounter);
     
-    int32_t forwardPos = pulseCounter.getPosition();
-    int32_t forwardSteps = forwardPos - startPos;
+    Serial.println("\n[6/7] Running closed loop demo...");
+    demonstrateClosedLoopControl(pwmStepper, pulseCounter, driver);
     
-    Serial.print("Forward steps counted: "); Serial.println(forwardSteps);
-    Serial.print("Expected: ~1000, Actual: "); Serial.println(forwardSteps);
-    Serial.print("Direction detection: "); Serial.println(pulseCounter.getDirection() ? "Forward" : "Reverse");
+    Serial.println("\n[7/7] Running speed measurement demo...");
+    demonstrateSpeedMeasurement(pwmStepper, pulseCounter);
     
-    // Evaluate forward test
-    bool forwardTest = (forwardSteps >= 950 && forwardSteps <= 1050); // ±5% tolerance
-    float forwardAccuracy = (float)forwardSteps / 1000.0 * 100.0;
-    addTestResult("Forward Direction", forwardTest, 
-                  "Expected: 1000, Got: " + String(forwardSteps), forwardAccuracy);
-    
-    delay(1000);
-    
-    // Test 2: Reverse direction
-    Serial.println("Testing REVERSE direction (1000 steps)...");
-    pwmStepper.setDirection(false);
-    delay(100); // Let direction settle
-    
-    startPos = pulseCounter.getPosition();
-    pwmStepper.startPWM(800);
-    delay(1250); // 1000 steps at 800 Hz = 1.25 seconds
-    pwmStepper.stopPWM();
-    
-    int32_t reversePos = pulseCounter.getPosition();
-    int32_t reverseSteps = reversePos - startPos;
-    
-    Serial.print("Reverse steps counted: "); Serial.println(reverseSteps);
-    Serial.print("Expected: ~-1000, Actual: "); Serial.println(reverseSteps);
-    Serial.print("Direction detection: "); Serial.println(pulseCounter.getDirection() ? "Forward" : "Reverse");
-    
-    // Evaluate reverse test
-    bool reverseTest = (reverseSteps <= -950 && reverseSteps >= -1050); // ±5% tolerance
-    float reverseAccuracy = (float)abs(reverseSteps) / 1000.0 * 100.0;
-    addTestResult("Reverse Direction", reverseTest, 
-                  "Expected: -1000, Got: " + String(reverseSteps), reverseAccuracy);
-    
-    // Test 3: Multiple direction changes
-    Serial.println("Testing rapid direction changes...");
-    int passedChanges = 0;
-    for (int i = 0; i < 5; i++) {
-        bool dir = (i % 2 == 0);
-        pwmStepper.setDirection(dir);
-        delay(50);
-        
-        startPos = pulseCounter.getPosition();
-        pwmStepper.startPWM(1000);
-        delay(200); // 200 steps
-        pwmStepper.stopPWM();
-        
-        int32_t steps = pulseCounter.getPosition() - startPos;
-        int32_t expectedSteps = dir ? 200 : -200;
-        bool changeOK = (abs(abs(steps) - 200) <= 20); // ±10% tolerance
-        
-        if (changeOK) passedChanges++;
-        
-        Serial.print("Change "); Serial.print(i+1); 
-        Serial.print(" ("); Serial.print(dir ? "FWD" : "REV"); 
-        Serial.print("): "); Serial.print(steps);
-        Serial.println(changeOK ? " ✓" : " ✗");
-        
-        delay(100);
-    }
-    
-    bool rapidChangesTest = (passedChanges >= 4); // At least 4/5 must pass
-    addTestResult("Rapid Direction Changes", rapidChangesTest, 
-                  String(passedChanges) + "/5 changes successful");
-    
-    Serial.print("Final position after direction test: "); 
-    Serial.println(pulseCounter.getPosition());
-}
-
-void testCounterOverflow() {
-    Serial.println("\n=== PCNT Counter Overflow Test ===");
-    
-    pulseCounter.resetPosition();
-    
-    pwmStepper.enable();
-    pwmStepper.setDirection(true);
-    
-    Serial.println("Testing positive overflow (moving to +6000 steps)...");
-    
-    // Monitor position as we approach and exceed the limit
-    pwmStepper.startPWM(20000); // High speed for faster test
-    
-    bool positiveOverflowOK = false;
-    for (int i = 0; i < 60; i++) { // 6 seconds at 20kHz = 120000 steps
-        delay(100);
-        int32_t pos = pulseCounter.getPosition();
-        int16_t raw = pulseCounter.getRawCount();
-        
-        Serial.print("Time: "); Serial.print(i * 100); Serial.print("ms");
-        Serial.print(" | Raw: "); Serial.print(raw);
-        Serial.print(" | Position: "); Serial.println(pos);
-        
-        if (pos > 60000) {
-            Serial.println("Positive overflow test completed!");
-            positiveOverflowOK = true;
-            break;
-        }
-    }
-    
-    pwmStepper.stopPWM();
-    addTestResult("Positive Overflow", positiveOverflowOK, 
-                  positiveOverflowOK ? "Successfully exceeded +60000" : "Failed to reach +60000");
-    delay(1000);
-    
-    Serial.println("Testing negative overflow (moving to -60000 steps)...");
-    pwmStepper.setDirection(false);
-    pwmStepper.startPWM(20000);
-    
-    bool negativeOverflowOK = false;
-    for (int i = 0; i < 120; i++) { // More time to go negative
-        delay(100);
-        int32_t pos = pulseCounter.getPosition();
-        int16_t raw = pulseCounter.getRawCount();
-        
-        Serial.print("Time: "); Serial.print(i * 100); Serial.print("ms");
-        Serial.print(" | Raw: "); Serial.print(raw);
-        Serial.print(" | Position: "); Serial.println(pos);
-        
-        if (pos < -60000) {
-            Serial.println("Negative overflow test completed!");
-            negativeOverflowOK = true;
-            break;
-        }
-    }
-    
-    pwmStepper.stopPWM();
-    addTestResult("Negative Overflow", negativeOverflowOK, 
-                  negativeOverflowOK ? "Successfully exceeded -60000" : "Failed to reach -60000");
-        
-    Serial.print("Final position after overflow test: ");
-    Serial.println(pulseCounter.getPosition());
-}
-
-void testHighSpeedAcceleration() {
-    Serial.println("\n=== High Speed Acceleration Test (up to 200kHz) ===");
-    
-    pulseCounter.resetPosition();
-    pwmStepper.enable();
-    pwmStepper.setDirection(true);
-    pwmStepper.setAcceleration(50000); // 50kHz/s acceleration
-    
-    // Test speeds from 1kHz to 200kHz
-    uint32_t testSpeeds[] = {1000, 5000, 10000, 25000, 50000, 75000, 100000, 150000, 200000, 250000, 300000, 350000, 400000}; // In my setup max is ~300kHz (using 256 microsteps)
-    int numSpeeds = sizeof(testSpeeds) / sizeof(testSpeeds[0]);
-    
-    Serial.println("Testing acceleration profile...");
-    
-    int passedSpeeds = 0;
-    for (int i = 0; i < numSpeeds; i++) {
-        uint32_t speed = testSpeeds[i];
-        Serial.print("Setting speed to: "); Serial.print(speed); Serial.println(" Hz");
-        
-        // for (int acceleration = 0; acceleration <= speed; acceleration += 2560) {
-        //     pwmStepper.startPWM(acceleration);
-        //     Serial.print("  Acceleration: "); Serial.print(acceleration); Serial.println(" Hz/s");
-        //     delay(100); // Let it stabilize
-        // }
-        pwmStepper.setTargetFrequency(speed);
-        while (pwmStepper.getFrequency() < speed) {
-            delay(10); // Wait until target speed is reached
-        }
-        int32_t startPos = pulseCounter.getPosition();
-        uint32_t startTime = millis();        
-        delay(5000); // Run for 5000ms at each speed
-        pwmStepper.stopPWM();
-        
-        uint32_t endTime = millis();
-        int32_t endPos = pulseCounter.getPosition();
-        
-        uint32_t duration = endTime - startTime;
-        int32_t stepsCounted = endPos - startPos;
-        uint32_t expectedSteps = (speed * duration) / 1000;
-        float accuracy = (float)stepsCounted / expectedSteps * 100.0;
-        
-        Serial.print("  Duration: "); Serial.print(duration); Serial.print("ms");
-        Serial.print(" | Expected steps: "); Serial.print(expectedSteps);
-        Serial.print(" | Counted: "); Serial.print(stepsCounted);
-        Serial.print(" | Accuracy: "); Serial.print(accuracy, 1); Serial.println("%");
-        
-        bool speedTestOK = (accuracy >= 90.0);
-        if (speedTestOK) passedSpeeds++;
-        
-        String speedName = "Speed " + String(speed/1000) + "kHz";
-        addTestResult(speedName, speedTestOK, 
-                      "Expected: " + String(expectedSteps) + ", Got: " + String(stepsCounted), 
-                      accuracy);
-        
-        if (accuracy < 90.0) {
-            Serial.println("  WARNING: Low accuracy detected!");
-        }
-        
-        delay(200); // Brief pause between speeds
-    }
-    
-    pwmStepper.stopPWM();
-    pwmStepper.setAcceleration(0); // Reset acceleration
-
-    // Overall high speed test result
-    bool overallHighSpeedOK = (passedSpeeds >= 7); // At least 7/9 speeds must pass
-    addTestResult("High Speed Overall", overallHighSpeedOK, 
-                  String(passedSpeeds) + "/" + String(numSpeeds) + " speeds passed");
-    
-    Serial.println("High speed test completed!");
-    Serial.print("Total steps moved: "); Serial.println(pulseCounter.getPosition());
-}
-
-void testLowSpeedPrecision() {
-    Serial.println("\n=== Low Speed Precision Test (below 1Hz) ===");
-    
-    pulseCounter.resetPosition();
-    pwmStepper.enable();
-    pwmStepper.setDirection(true);
-    
-    // Test very low frequencies
-    float testFreqs[] = {0.1, 0.2, 0.5, 0.8, 1.0, 2.0, 5.0};
-    int numFreqs = sizeof(testFreqs) / sizeof(testFreqs[0]);
-    
-    Serial.println("Testing low speed precision...");
-    
-    int passedLowSpeeds = 0;
-    for (int i = 0; i < numFreqs; i++) {
-        float freq = testFreqs[i];
-        bool testPassed = false;
-        float accuracy = 0.0;
-        
-        // For frequencies below 1Hz, we need special handling
-        if (freq < 1.0) {
-            Serial.print("Testing ultra-low speed: "); Serial.print(freq, 1); Serial.println(" Hz");
-            
-            // Calculate step period in milliseconds
-            uint32_t stepPeriod = (uint32_t)(1000.0 / freq);
-            int32_t startPos = pulseCounter.getPosition();
-            
-            Serial.print("  Step period: "); Serial.print(stepPeriod); Serial.println("ms");
-            
-            uint32_t testStart = millis();
-            // Generate 10 steps manually with precise timing
-            for (int step = 0; step < 10; step++) {
-                uint32_t stepStart = millis();
-                // Generate single pulse
-                pwmStepper.startPWM(freq);
-                // Wait for next step
-                while (millis() - stepStart < stepPeriod) {
-                    delay(1);
-                }
-                Serial.printf("    Step %d | Position: %d Time: %f s\n", step + 1, pulseCounter.getPosition(), 0.001 * (millis() - testStart));
-            }
-            
-            int32_t endPos = pulseCounter.getPosition();
-            int32_t stepsCounted = endPos - startPos;
-            accuracy = (float)stepsCounted / 10.0 * 100.0;
-            testPassed = (stepsCounted >= 9 && stepsCounted <= 11); // ±1 step tolerance
-
-            Serial.printf("  Expected: 10 steps, Counted: %d\n", stepsCounted);
-            Serial.printf("  Accuracy: %.1f%%\n", accuracy);
-
-            String freqName = "Ultra-low " + String(freq, 1) + "Hz";
-            addTestResult(freqName, testPassed, 
-                          "Expected: 10, Got: " + String(stepsCounted), accuracy);
-            
-        } else {
-            // For frequencies >= 1Hz, use PWM
-            Serial.print("Testing low speed PWM: "); Serial.print(freq, 1); Serial.println(" Hz");
-            
-            uint32_t freqHz = (uint32_t)freq;
-            int32_t startPos = pulseCounter.getPosition();
-            
-            pwmStepper.startPWM(freqHz);
-            delay(5000); // Run for 5 seconds
-            pwmStepper.stopPWM();
-            
-            int32_t endPos = pulseCounter.getPosition();
-            int32_t stepsCounted = endPos - startPos;
-            uint32_t expectedSteps = freqHz * 5; // 5 seconds
-            accuracy = (float)stepsCounted / expectedSteps * 100.0;
-            testPassed = (accuracy >= 95.0); // Higher accuracy expected for PWM
-            
-            Serial.print("  Expected: "); Serial.print(expectedSteps);
-            Serial.print(" steps, Counted: "); Serial.println(stepsCounted);
-            Serial.print("  Accuracy: "); Serial.print(accuracy, 1); Serial.println("%");
-            
-            String freqName = "Low speed " + String(freq, 1) + "Hz";
-            addTestResult(freqName, testPassed, 
-                          "Expected: " + String(expectedSteps) + ", Got: " + String(stepsCounted), 
-                          accuracy);
-        }
-        
-        if (testPassed) passedLowSpeeds++;
-        delay(1000);
-    }
-    
-    // Overall low speed test result
-    bool overallLowSpeedOK = (passedLowSpeeds >= 5); // At least 5/7 speeds must pass
-    addTestResult("Low Speed Overall", overallLowSpeedOK, 
-                  String(passedLowSpeeds) + "/" + String(numFreqs) + " speeds passed");
-    
-    Serial.println("Low speed test completed!");
-    Serial.print("Total position: "); Serial.println(pulseCounter.getPosition());
-}
-
-void runComprehensiveTests() {
-    Serial.println("\n########################################");
-    Serial.println("#     COMPREHENSIVE TEST SUITE        #");
-    Serial.println("########################################");
-    
-    // Clear previous test results
-    testCount = 0;
-    
-    testDirectionChanges();
-    delay(2000);
-    
-    testCounterOverflow();
-    delay(2000);
-    
-    testHighSpeedAcceleration();
-    delay(2000);
-    
-    testLowSpeedPrecision();
-    delay(2000);
-    
-    Serial.println("\n########################################");
-    Serial.println("#     ALL TESTS COMPLETED             #");
-    Serial.println("########################################");
-    
-    // Print comprehensive test summary
+    // Print comprehensive summary
     printTestSummary();
 }
 
+void processSerialInput() {
+    if (Serial.available()) {
+        String input = Serial.readStringUntil('\n');
+        input.trim();
+        
+        if (input == "h" || input == "help") {
+            printTestMenu();
+            return;
+        }
+        
+        int testChoice = input.toInt();
+        
+        switch (testChoice) {
+            case TEST_BASIC_DIRECTION:
+                clearTestResults();
+                testDirectionChanges(pwmStepper, pulseCounter);
+                printTestSummary();
+                break;
+                
+            case TEST_HIGH_SPEED:
+                clearTestResults();
+                testHighSpeedAcceleration(pwmStepper, pulseCounter);
+                printTestSummary();
+                break;
+                
+            case TEST_LOW_SPEED:
+                clearTestResults();
+                testLowSpeedPrecision(pwmStepper, pulseCounter);
+                printTestSummary();
+                break;
+                
+            case TEST_OVERFLOW:
+                clearTestResults();
+                testCounterOverflow(pwmStepper, pulseCounter);
+                printTestSummary();
+                break;
+                
+            case DEMO_POSITION_TRACKING:
+                clearTestResults();
+                demonstratePositionTracking(pwmStepper, pulseCounter);
+                printTestSummary();
+                break;
+                
+            case DEMO_CLOSED_LOOP:
+                clearTestResults();
+                demonstrateClosedLoopControl(pwmStepper, pulseCounter, driver);
+                printTestSummary();
+                break;
+                
+            case DEMO_SPEED_MEASUREMENT:
+                clearTestResults();
+                demonstrateSpeedMeasurement(pwmStepper, pulseCounter);
+                printTestSummary();
+                break;
+                
+            case RUN_ALL_TESTS:
+                runAllTests();
+                break;
+                
+            case SHOW_SYSTEM_STATUS:
+                printSystemStatus(pwmStepper, pulseCounter, driver);
+                break;
+                
+            case RESET_POSITION:
+                pulseCounter.resetPosition();
+                pulseCounterN23.resetPosition();
+                Serial.println("Position counters reset to 0");
+                Serial.print("Primary stepper position: ");
+                Serial.println(pulseCounter.getPosition());
+                Serial.print("N23 stepper position: ");
+                Serial.println(pulseCounterN23.getPosition());
+                break;
+                
+            default:
+                Serial.println("Invalid option. Type 'h' for help.");
+                break;
+        }
+        
+        printTestMenu();
+    }
+}
+
 void loop() {
-    // Initialize test results for new cycle
-    testCount = 0;
+    processSerialInput();
     
-    Serial.println("\n=== MAIN MENU ===");
-    Serial.println("1. Basic Demo (Position, Closed-loop, Speed)");
-    Serial.println("2. Comprehensive Test Suite");
-    Serial.println("3. Individual Tests");
-    Serial.println("Starting Basic Demo in 3 seconds...");
-    delay(3000);
+    // Optional: periodic status updates
+    static unsigned long lastStatusUpdate = 0;
+    if (millis() - lastStatusUpdate > 30000) { // Every 30 seconds
+        Serial.println("\n--- Periodic Status Update ---");
+        Serial.print("Primary position: ");
+        Serial.println(pulseCounter.getPosition());
+        Serial.print("N23 position: ");
+        Serial.println(pulseCounterN23.getPosition());
+        lastStatusUpdate = millis();
+    }
     
-    // Run basic demos first
-    printSystemStatus();
-    delay(1000);
-    
-    demonstratePositionTracking(pwmStepper, pulseCounter);
-    demonstratePositionTracking(pwmStepperN23, pulseCounterN23);
-    delay(2000);
-    
-    demonstrateClosedLoopControl();
-    delay(2000);
-    
-    demonstrateSpeedMeasurement();
-    delay(2000);
-    
-    // Run comprehensive test suite
-    runComprehensiveTests();
-    
-    pwmStepper.disable();
-    pulseCounter.stop();
-    
-    Serial.println("\n=== ALL DEMOS AND TESTS COMPLETED ===");
-    Serial.println("Restarting full cycle in 10 seconds...\n");
-    delay(10000);
-    
-    pulseCounter.start();
+    delay(100); // Small delay to prevent overwhelming serial
 }

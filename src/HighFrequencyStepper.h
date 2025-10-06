@@ -16,8 +16,7 @@ struct StepperConfig {
     uint8_t dirPin;
     uint8_t enablePin;
     uint8_t stepCountPin;    // Pin for pulse counting (can be same as stepPin)
-    uint8_t txPin;           // UART TX for TMC communication
-    uint8_t rxPin;           // UART RX for TMC communication
+    HardwareSerial* uart;    // Pointer to HardwareSerial instance for TMC communication
     
     // TMC2209 configuration
     uint8_t driverAddress;   // TMC2209 address (0b00, 0b01, 0b10, 0b11)
@@ -45,8 +44,7 @@ struct StepperConfig {
         dirPin = 0;
         enablePin = 0;
         stepCountPin = 0;
-        txPin = 0;
-        rxPin = 0;
+        uart = nullptr;
         driverAddress = 0;
         rSense = 0.11f;
         microsteps = 16;
@@ -106,7 +104,6 @@ private:
     // Helper methods
     bool validateStepperIndex(uint8_t index) const;
     void updatePosition(uint8_t index);
-    void configureUART(uint8_t index);
     
 public:
     // Constructor

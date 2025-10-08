@@ -57,7 +57,9 @@ bool HighFrequencyStepper::addStepper(uint8_t index, const StepperConfig& config
     }
     
     // Create PulseCounter instance
-    pulseCounters[index] = new PulseCounter(config.pcntUnit, config.stepCountPin, config.dirPin);
+    //pulseCounters[index] = new PulseCounter(config.pcntUnit, config.stepCountPin, config.dirPin);
+    pulseCounters[index] = new ESP32Encoder();
+    pulseCounters[index]->attachSingleEdge(config.stepCountPin, config.dirPin);
     if (!pulseCounters[index]) {
         Serial.println("ERROR: Failed to create PulseCounter instance");
         delete pwmSteppers[index];
@@ -98,11 +100,12 @@ bool HighFrequencyStepper::initializeStepper(uint8_t index) {
     pwmSteppers[index]->begin();
     
     // Initialize PulseCounter
-    if (!pulseCounters[index]->begin(configs[index].invertDirection)) {
-        Serial.println("ERROR: Failed to initialize PulseCounter");
-        return false;
-    }
-    pulseCounters[index]->start();
+    // if (!pulseCounters[index]->begin(configs[index].invertDirection)) {
+    //     Serial.println("ERROR: Failed to initialize PulseCounter");
+    //     return false;
+    // }
+    // pulseCounters[index]->start();
+    pulseCounters[index]->setCount(0);
     
     // Initialize TMC2209
     if (tmcDrivers[index]) {
@@ -229,8 +232,11 @@ bool HighFrequencyStepper::moveRelative(uint8_t index, int32_t steps, double fre
     // Execute movement
     uint32_t currentMicros = micros();
     double stepDuration = 1000000.0 / frequency;
-    double expectedEndTime = currentMicros + (1.05* absSteps * stepDuration);
+    double expectedEndTime = currentMicros + (1.5* absSteps * stepDuration);
 
+    if (configs[index].invertDirection) {
+        direction = !direction;
+    }
     pwmSteppers[index]->setDirection(direction);
     pwmSteppers[index]->startPWM(frequency);
     while (micros() < expectedEndTime && abs(getPosition(index) - status[index].targetPosition) > 1) {
@@ -253,6 +259,9 @@ bool HighFrequencyStepper::startContinuous(uint8_t index, double frequency, bool
     status[index].isMoving = true;
     status[index].currentFrequency = frequency;
     
+    if (configs[index].invertDirection) {
+        direction = !direction;
+    }
     pwmSteppers[index]->setDirection(direction);
     pwmSteppers[index]->startPWM(frequency);
     
@@ -313,7 +322,8 @@ int32_t HighFrequencyStepper::getPosition(uint8_t index) {
     if (!validateStepperIndex(index)) return 0;
     
     // Get position from pulse counter
-    int32_t pulseCount = pulseCounters[index]->getPosition();
+    //int32_t pulseCount = pulseCounters[index]->getPosition();
+    int32_t pulseCount = pulseCounters[index]->getCount();
     
     // Update internal position tracking
     status[index].currentPosition = pulseCount;
@@ -399,7 +409,8 @@ bool HighFrequencyStepper::isEnabled(uint8_t index) {
 bool HighFrequencyStepper::setPosition(uint8_t index, int32_t position) {
     if (!validateStepperIndex(index)) return false;
     
-    pulseCounters[index]->setPosition(position);
+    //pulseCounters[index]->setPosition(position);
+    pulseCounters[index]->setCount(position);
     status[index].currentPosition = position;
     status[index].targetPosition = position;
     

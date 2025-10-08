@@ -5,6 +5,7 @@
 #include "PWMStepper.h"
 #include "PulseCounter.h"
 #include <TMCStepper.h>
+#include <ESP32Encoder.h>
 
 // Maximum number of steppers supported
 #define MAX_STEPPERS 4
@@ -89,7 +90,7 @@ class HighFrequencyStepper {
 private:
     // Arrays to hold instances for each stepper
     PWMStepper* pwmSteppers[MAX_STEPPERS];
-    PulseCounter* pulseCounters[MAX_STEPPERS];
+    ESP32Encoder* pulseCounters[MAX_STEPPERS];
     TMC2209Stepper* tmcDrivers[MAX_STEPPERS];
     HardwareSerial* uartPorts[MAX_STEPPERS];
     
@@ -148,8 +149,6 @@ public:
     
     // Position control
     bool setPosition(uint8_t index, int32_t position);
-    bool home(uint8_t index, double frequency = 1000);
-    bool zeroPosition(uint8_t index);
     
     // Advanced TMC features
     bool enableStallGuard(uint8_t index, uint8_t threshold = 10);

@@ -117,6 +117,7 @@ void PWMStepper::update() {
 // Set direction
 void PWMStepper::setDirection(bool dir) {
     direction = dir;
+    
     digitalWrite(dirPin, direction ? HIGH : LOW);
 }
 

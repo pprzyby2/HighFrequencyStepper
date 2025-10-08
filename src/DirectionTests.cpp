@@ -27,7 +27,8 @@ void testDirectionChanges(HighFrequencyStepper& stepper, int index) {
     delay(1000);
     
     // Test 2: Reverse direction
-    Serial.println("Testing REVERSE direction (7500 steps)...");
+    stepper.setPosition(index, 0);
+    Serial.println("Testing REVERSE direction (-5000 steps)...");
     stepper.moveToPosition(index, -5000, 1500); // Move 5000 steps backward at 1500 Hz
 
     int32_t reversePos = stepper.getPosition(index);
@@ -42,6 +43,7 @@ void testDirectionChanges(HighFrequencyStepper& stepper, int index) {
                   "Expected: -5000, Got: " + String(reversePos), reverseAccuracy);
     
     // Test 3: Multiple direction changes
+    stepper.setPosition(index, 0);
     Serial.println("Testing rapid direction changes...");
     int passedChanges = 0;
     for (int i = 0; i < 5; i++) {

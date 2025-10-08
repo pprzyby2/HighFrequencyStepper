@@ -99,7 +99,7 @@ void setup() {
     configN23.dirPin = N23_DIR_PIN;             // Different direction pin
     configN23.enablePin = N23_EN_PIN;         // Can share enable pin
     configN23.stepCountPin = N23_CNT_PIN;       // Different pulse counter pin
-    configN23.invertDirection = false;           // No reverse counting
+    configN23.invertDirection = true;           // Reverse counting
     configN23.uart = NULL;                   // The same UART for TMC
     configN23.driverAddress = 0b01;              // Different UART TMC address
     configN23.rSense = 0.11f;         

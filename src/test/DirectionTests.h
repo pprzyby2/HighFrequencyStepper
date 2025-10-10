@@ -3,7 +3,6 @@
 
 #include <Arduino.h>
 #include "PWMStepper.h"
-#include "PulseCounter.h"
 #include "HighFrequencyStepper.h"
 
 // Direction test functions

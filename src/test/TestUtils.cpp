@@ -73,23 +73,21 @@ void printTestSummary() {
     Serial.println("########################################\n");
 }
 
-void printSystemStatus(PWMStepper& stepper, PulseCounter& counter, TMC2209Stepper& driver) {
+void printSystemStatus(HighFrequencyStepper& stepper) {
     Serial.println("\n=== System Status ===");
     
-    // PWM Stepper status
-    Serial.println("PWM Stepper:");
-    Serial.print("  Enabled: "); Serial.println(stepper.isEnabled() ? "Yes" : "No");
-    Serial.print("  Direction: "); Serial.println(stepper.getDirection() ? "Forward" : "Reverse");
-    Serial.print("  Frequency: "); Serial.print(stepper.getFrequency()); Serial.println(" Hz");
-    Serial.print("  Mode: "); Serial.println(stepper.isInLEDCMode() ? "LEDC" : "Timer");
-    
-    // Pulse Counter status
-    Serial.println("Pulse Counter:");
-    counter.printStatus();
-    
-    // TMC2209 status
-    Serial.println("TMC2209:");
-    Serial.print("  Connection: "); Serial.println(driver.test_connection());
-    Serial.print("  SG Result: "); Serial.println(driver.SG_RESULT());
-    Serial.print("  Current: "); Serial.print(driver.cs2rms(driver.cs_actual())); Serial.println(" mA");
+    for (int i = 0; i < stepper.getStepperCount(); i++) {
+        Serial.printf("\n--- Stepper %d Status ---\n", i);
+        Serial.print("Enabled: "); Serial.println(stepper.isEnabled(i) ? "Yes" : "No");
+        Serial.print("Position: "); Serial.println(stepper.getPosition(i));
+        Serial.print("Target Position: "); Serial.println(stepper.getTargetPosition(i));
+        Serial.print("Moving: "); Serial.println(stepper.isMoving(i) ? "Yes" : "No");
+        Serial.print("Current Frequency: "); Serial.print(stepper.getCurrentFrequency(i)); Serial.println(" Hz");
+        Serial.print("Microsteps: "); Serial.println(stepper.getMicrosteps(i));
+        Serial.print("RMS Current: "); Serial.print(stepper.getRMSCurrent(i)); Serial.println(" mA");
+        Serial.print("Max Frequency: "); Serial.print(stepper.getMaxFrequency(i)); Serial.println(" Hz");
+        Serial.print("Acceleration: "); Serial.print(stepper.getAcceleration(i)); Serial.println(" steps/s²");
+        Serial.print("Invert Direction: "); Serial.println(stepper.getInvertDirection(i) ? "Yes" : "No");
+    }
+    Serial.println("=====================\n");
 }

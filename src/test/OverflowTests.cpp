@@ -1,46 +1,47 @@
 #include "OverflowTests.h"
 #include "TestUtils.h"
 
-void testCounterOverflow(PWMStepper& stepper, PulseCounter& counter) {
+
+void testCounterOverflow(HighFrequencyStepper& controller, uint8_t index) {
     Serial.println("\n=== Counter Overflow Test ===");
     Serial.println("Testing position tracking through 16-bit counter overflow...");
-    
-    counter.resetPosition();
-    stepper.enable();
-    stepper.setDirection(true);
-    
+
+    controller.setPosition(index, 0);
+    controller.enableStepper(index);
+    bool dir = true;
+
     // First, get close to overflow (16-bit counter has values -32768 to +32767)
     // Move to position close to positive overflow
     Serial.println("Moving close to positive overflow point...");
     
     int targetSteps = 32000;
-    int32_t startPosition = counter.getPosition();
-    
-    stepper.startPWM(10000); // 10kHz
-    
-    while (counter.getPosition() < targetSteps) {
+    int32_t startPosition = controller.getPosition(index);
+
+    controller.startContinuous(index, 10000, dir); // 10kHz
+
+    while (controller.getPosition(index) < targetSteps) {
         if (millis() % 2000 == 0) {
             Serial.print("Current position: "); 
-            Serial.println(counter.getPosition());
+            Serial.println(controller.getPosition(index));
             delay(1); // Prevent multiple prints in same millisecond
         }
     }
-    
-    stepper.stopPWM();
-    
-    int32_t nearOverflowPosition = counter.getPosition();
+
+    controller.stop(index);
+
+    int32_t nearOverflowPosition = controller.getPosition(index);
     Serial.print("Position before overflow test: "); 
     Serial.println(nearOverflowPosition);
     
     // Now move enough to cause overflow
     Serial.println("Triggering positive overflow...");
-    
-    int32_t preOverflowPos = counter.getPosition();
-    stepper.startPWM(5000);
+
+    int32_t preOverflowPos = controller.getPosition(index);
+    controller.startContinuous(index, 5000, dir);
     delay(2000); // Should add ~10,000 steps, crossing overflow
-    stepper.stopPWM();
-    
-    int32_t postOverflowPos = counter.getPosition();
+    controller.stop(index);
+
+    int32_t postOverflowPos = controller.getPosition(index);
     int32_t stepsThroughOverflow = postOverflowPos - preOverflowPos;
     
     Serial.print("Position after overflow: "); Serial.println(postOverflowPos);
@@ -53,24 +54,24 @@ void testCounterOverflow(PWMStepper& stepper, PulseCounter& counter) {
     
     // Test negative overflow
     Serial.println("\nTesting negative overflow...");
-    stepper.setDirection(false); // Reverse
+    dir = false; // Reverse
     
     // Move way past the negative overflow point
     int32_t negativeTarget = -50000;
-    
-    stepper.startPWM(15000);
-    
-    while (counter.getPosition() > negativeTarget) {
+
+    controller.startContinuous(index, 15000, dir);
+
+    while (controller.getPosition(index) > negativeTarget) {
         if (millis() % 2000 == 0) {
             Serial.print("Current position: "); 
-            Serial.println(counter.getPosition());
+            Serial.println(controller.getPosition(index));
             delay(1);
         }
     }
-    
-    stepper.stopPWM();
-    
-    int32_t finalPosition = counter.getPosition();
+
+    controller.stop(index);
+
+    int32_t finalPosition = controller.getPosition(index);
     Serial.print("Final position after negative overflow: "); 
     Serial.println(finalPosition);
     
@@ -88,4 +89,10 @@ void testCounterOverflow(PWMStepper& stepper, PulseCounter& counter) {
     Serial.print("Total movement through test: "); 
     Serial.print(totalMovement); Serial.println(" steps");
     Serial.println("Overflow test completed!");
+}
+
+void testCounterOverflow(HighFrequencyStepper& controller) {
+    for (uint8_t i = 0; i < controller.getStepperCount(); i++) {
+        testCounterOverflow(controller, i);
+    }
 }

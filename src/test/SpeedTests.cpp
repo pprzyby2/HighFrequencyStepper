@@ -1,33 +1,34 @@
 #include "SpeedTests.h"
 #include "TestUtils.h"
+#include "HighFrequencyStepper.h"
 
-void testHighSpeedAcceleration(PWMStepper& stepper, PulseCounter& counter) {
+void testHighSpeedAcceleration(HighFrequencyStepper& controller, uint8_t index) {
     Serial.println("\n=== High Speed Acceleration Test (up to 200kHz) ===");
     
-    counter.resetPosition();
-    stepper.enable();
-    stepper.setDirection(true);
+    controller.setPosition(index, 0);
+    controller.enableStepper(index);
+    bool dir = true;
     
     // Test speeds from 1kHz to 400kHz
-    uint32_t testSpeeds[] = {1000, 5000, 10000, 25000, 50000, 75000, 100000, 150000, 200000, 250000, 300000, 350000, 400000};
-    int numSpeeds = sizeof(testSpeeds) / sizeof(testSpeeds[0]);
     
     Serial.println("Testing acceleration profile...");
     
     int passedSpeeds = 0;
-    for (int i = 0; i < numSpeeds; i++) {
-        uint32_t speed = testSpeeds[i];
+    int numSpeeds = 0;
+    for (int i = 5; i < 100; i += 5) {
+        numSpeeds++;
+        uint32_t speed = controller.getMaxFrequency(index) * i / 100; // From 5% to 100%
         Serial.print("Setting speed to: "); Serial.print(speed); Serial.println(" Hz");
-        
-        int32_t startPos = counter.getPosition();
-        uint32_t startTime = millis();        
-        
-        stepper.startPWM(speed);
+
+        int32_t startPos = controller.getPosition(index);
+        uint32_t startTime = millis();
+
+        controller.startContinuous(index, speed, dir);
         delay(1000); // Run for 1 second at each speed
-        stepper.stopPWM();
-        
+        controller.stop(index);
+
         uint32_t endTime = millis();
-        int32_t endPos = counter.getPosition();
+        int32_t endPos = controller.getPosition(index);
         
         uint32_t duration = endTime - startTime;
         int32_t stepsCounted = endPos - startPos;
@@ -53,8 +54,8 @@ void testHighSpeedAcceleration(PWMStepper& stepper, PulseCounter& counter) {
         
         delay(200); // Brief pause between speeds
     }
-    
-    stepper.stopPWM();
+
+    controller.stop(index);
 
     // Overall high speed test result
     bool overallHighSpeedOK = (passedSpeeds >= 7); // At least 7/13 speeds must pass
@@ -62,15 +63,21 @@ void testHighSpeedAcceleration(PWMStepper& stepper, PulseCounter& counter) {
                   String(passedSpeeds) + "/" + String(numSpeeds) + " speeds passed");
     
     Serial.println("High speed test completed!");
-    Serial.print("Total steps moved: "); Serial.println(counter.getPosition());
+    Serial.print("Total steps moved: "); Serial.println(controller.getPosition(index));
 }
 
-void testLowSpeedPrecision(PWMStepper& stepper, PulseCounter& counter) {
+void testHighSpeedAcceleration(HighFrequencyStepper& controller) {
+    for (uint8_t i = 0; i < controller.getStepperCount(); i++) {
+        testHighSpeedAcceleration(controller, i);
+    }
+}
+
+void testLowSpeedPrecision(HighFrequencyStepper& controller, uint8_t index) {
     Serial.println("\n=== Low Speed Precision Test (Timer Mode) ===");
-    
-    counter.resetPosition();
-    stepper.enable();
-    stepper.setDirection(true);
+
+    controller.setPosition(index, 0);
+    controller.enableStepper(index);
+    bool dir = true;
     
     // Test very low frequencies (should use Timer mode)
     float testFreqs[] = {1.0, 5.0, 10.0, 50.0, 100.0, 200.0, 500.0};
@@ -84,13 +91,13 @@ void testLowSpeedPrecision(PWMStepper& stepper, PulseCounter& counter) {
         Serial.print("Testing low speed: "); Serial.print(freq, 1); Serial.println(" Hz");
         
         uint32_t freqHz = (uint32_t)freq;
-        int32_t startPos = counter.getPosition();
-        
-        stepper.startPWM(freqHz);
+        int32_t startPos = controller.getPosition(index);
+
+        controller.startContinuous(index, freqHz, dir);
         delay(5000); // Run for 5 seconds
-        stepper.stopPWM();
-        
-        int32_t endPos = counter.getPosition();
+        controller.stop(index);
+
+        int32_t endPos = controller.getPosition(index);
         int32_t stepsCounted = endPos - startPos;
         uint32_t expectedSteps = freqHz * 5; // 5 seconds
         float accuracy = (float)stepsCounted / expectedSteps * 100.0;
@@ -99,7 +106,7 @@ void testLowSpeedPrecision(PWMStepper& stepper, PulseCounter& counter) {
         Serial.print("  Expected: "); Serial.print(expectedSteps);
         Serial.print(" steps, Counted: "); Serial.println(stepsCounted);
         Serial.print("  Accuracy: "); Serial.print(accuracy, 1); Serial.println("%");
-        Serial.print("  Mode: "); Serial.println(stepper.isInLEDCMode() ? "LEDC" : "Timer");
+        Serial.print("  Mode: "); Serial.println(controller.isInLEDCMode(index) ? "LEDC" : "Timer");
         
         String freqName = "Low speed " + String(freq, 1) + "Hz";
         addTestResult(freqName, testPassed, 
@@ -116,14 +123,20 @@ void testLowSpeedPrecision(PWMStepper& stepper, PulseCounter& counter) {
                   String(passedLowSpeeds) + "/" + String(numFreqs) + " speeds passed");
     
     Serial.println("Low speed test completed!");
-    Serial.print("Total position: "); Serial.println(counter.getPosition());
+    Serial.print("Total position: "); Serial.println(controller.getPosition(index));
 }
 
-void demonstrateSpeedMeasurement(PWMStepper& stepper, PulseCounter& counter) {
+void testLowSpeedPrecision(HighFrequencyStepper& controller) {
+    for (uint8_t i = 0; i < controller.getStepperCount(); i++) {
+        testLowSpeedPrecision(controller, i);
+    }
+}
+
+void demonstrateSpeedMeasurement(HighFrequencyStepper& controller, uint8_t index) {
     Serial.println("\n=== Speed Measurement Demo ===");
-    
-    stepper.enable();
-    
+
+    controller.enableStepper(index);
+
     // Test different speeds
     uint32_t testSpeeds[] = {200, 500, 1000, 1500, 2000};
     
@@ -131,21 +144,31 @@ void demonstrateSpeedMeasurement(PWMStepper& stepper, PulseCounter& counter) {
         uint32_t setSpeed = testSpeeds[i];
         Serial.print("Setting speed to: "); Serial.print(setSpeed); Serial.println(" Hz");
         
-        stepper.setDirection(i % 2 == 0); // Alternate direction
-        stepper.startPWM(setSpeed);
+        controller.startContinuous(index, setSpeed, i % 2 == 0);
         
         delay(1000); // Let it stabilize
         
         // Measure speed over 2 seconds
         for (int j = 0; j < 10; j++) {
-            int32_t measuredSpeed = counter.getStepsPerSecond(200);
+            int64_t startTime = millis();
+            int32_t startPos = controller.getPosition(index);
+            delay(200);
+            int32_t endPos = controller.getPosition(index);
+            int64_t endTime = millis();
+            int32_t measuredSpeed = (int32_t)((endPos - startPos) * 1000 / (endTime - startTime));
             if (measuredSpeed != 0) {
                 Serial.printf("Steps: %d Measured: %d Hz | Error: %d Hz\n", measuredSpeed, abs(measuredSpeed), abs(measuredSpeed) - setSpeed);
             }
             delay(200);
         }
-        
-        stepper.stopPWM();
+
+        controller.stop(index);
         delay(500);
+    }
+}
+
+void demonstrateSpeedMeasurement(HighFrequencyStepper& controller) {
+    for (uint8_t i = 0; i < controller.getStepperCount(); i++) {
+        demonstrateSpeedMeasurement(controller, i);
     }
 }

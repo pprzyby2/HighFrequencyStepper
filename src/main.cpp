@@ -11,16 +11,16 @@
 
 #include <Arduino.h>
 #include "PWMStepper.h"
-#include "PulseCounter.h"
 #include "HighFrequencyStepper.h"
 #include <TMCStepper.h>
 
 // Include organized test files
-#include "TestUtils.h"
-#include "DirectionTests.h"
-#include "SpeedTests.h"
-#include "OverflowTests.h"
-#include "DemoTests.h"
+#include "test/TestUtils.h"
+#include "test/DirectionTests.h"
+#include "test/SpeedTests.h"
+#include "test/OverflowTests.h"
+#include "test/DemoTests.h"
+#include "test/AngleTests.h"
 
 // Pin definitions
 #define EN_PIN           23          // Enable - PURPLE
@@ -38,15 +38,6 @@
 #define N23_STEP_PIN     4           // N23 Step pin - RED
 #define N23_CNT_PIN      23          // N23 Step counter input
 
-// Create instances for primary stepper
-PWMStepper pwmStepper(STEP_PIN, DIR_PIN, EN_PIN, 0);
-PulseCounter pulseCounter(PCNT_UNIT_0, STEP_CNT_PIN, DIR_PIN);
-TMC2209Stepper driver(&Serial2, R_SENSE, DRIVER_ADDRESS);
-
-// Create instances for N23 stepper (optional second stepper)
-PWMStepper pwmStepperN23(N23_STEP_PIN, N23_DIR_PIN, N23_EN_PIN, 1);
-PulseCounter pulseCounterN23(PCNT_UNIT_1, N23_CNT_PIN, N23_DIR_PIN);
-
 // HighFrequencyStepper controller
 HighFrequencyStepper stepperController;
 
@@ -54,6 +45,11 @@ HighFrequencyStepper stepperController;
 void printTestMenu();
 void runAllTests();
 void processSerialInput();
+
+enum StepperID {
+    TMC2209 = 0,
+    N23 = 1
+};
 
 // Test menu options
 enum TestOption {
@@ -66,6 +62,7 @@ enum TestOption {
     DEMO_SPEED_MEASUREMENT = 7,
     RUN_ALL_TESTS = 8,
     SHOW_SYSTEM_STATUS = 9,
+    TEST_ANGLE_PRECISION = 10,
     RESET_POSITION = 0
 };
 
@@ -87,10 +84,10 @@ void setup() {
     configTMC2209.uart = &Serial2;             // UART for TMC
     configTMC2209.driverAddress = 0b00;   // TMC2209 address
     configTMC2209.rSense = 0.11f;         // Current sense resistor
-    configTMC2209.microsteps = 16;        // 16 microsteps
+    configTMC2209.microsteps = 256;        // 256 microsteps
     configTMC2209.rmsCurrent = 800;       // 800mA RMS current
     configTMC2209.stepsPerRev = 200;      // 200 steps per revolution
-    configTMC2209.maxFrequency = 400000;  // 100kHz max frequency
+    configTMC2209.maxFrequency = (300 / 60) * 256 * 200;  // 300 RPM max frequency
     configTMC2209.ledcChannel = 0;        // LEDC channel 0
 
     // Configuration for Stepper 1 (example second stepper)
@@ -106,17 +103,17 @@ void setup() {
     configN23.microsteps = 32;        // Different microsteps
     configN23.rmsCurrent = 1000;      // Different current
     configN23.stepsPerRev = 200;
-    configN23.maxFrequency = 10000;   // Different max frequency
+    configN23.maxFrequency = (150 / 60) * 32 * 200;  // 150 RPM max frequency
     configN23.ledcChannel = 1;        // Different LEDC channel
     configN23.pcntUnit = PCNT_UNIT_1; // Different pulse counter unit
 
     // Add steppers to controller
-    if (!stepperController.addStepper(0, configTMC2209)) {
+    if (!stepperController.addStepper(TMC2209, configTMC2209)) {
         Serial.println("Failed to add stepper 0");
         return;
     }
 
-    if (!stepperController.addStepper(1, configN23)) {
+    if (!stepperController.addStepper(N23, configN23)) {
         Serial.println("Failed to add stepper 1");
         return;
     }
@@ -139,54 +136,6 @@ void setup() {
     } else {
         Serial.println("Some steppers failed self-test!");
     }
-}
-
-
-void setup2() {
-    Serial.begin(115200);
-    Serial2.begin(115200);
-    delay(1000);
-    
-    Serial.println("=== ESP32 Stepper Motor Test Suite ===");
-    Serial.println("Organized test framework for PWMStepper + PulseCounter + TMC2209");
-    
-    // Initialize primary stepper
-    Serial.println("\nInitializing primary stepper...");
-    pwmStepper.begin();
-    pulseCounter.begin();
-    pulseCounter.start();
-    
-    // Initialize N23 stepper (optional)
-    Serial.println("Initializing N23 stepper...");
-    pwmStepperN23.begin();
-    pulseCounterN23.begin();
-    pulseCounterN23.start();
-    
-    // Initialize TMC2209
-    Serial.println("Initializing TMC2209 driver...");
-    driver.begin();
-    driver.toff(5);
-    driver.rms_current(2200);
-    driver.microsteps(256);
-    driver.VACTUAL(0);
-    driver.en_spreadCycle(true);
-    driver.pwm_autoscale(true);
-    
-    // Test TMC2209 connection
-    if (driver.test_connection()) {
-        Serial.println("TMC2209 connection: OK");
-    } else {
-        Serial.println("TMC2209 connection: FAILED");
-    }
-    
-    Serial.println("\nSystem initialization complete!");
-    printSystemStatus(pwmStepper, pulseCounter, driver);
-    
-    // Clear any previous test results
-    clearTestResults();
-    
-    Serial.println("\n==================================================");
-    printTestMenu();
 }
 
 void printTestMenu() {
@@ -218,23 +167,23 @@ void runAllTests() {
     }
 
     Serial.println("\n[2/7] Running high speed tests...");
-    testHighSpeedAcceleration(pwmStepper, pulseCounter);
+    testHighSpeedAcceleration(stepperController);
     
     Serial.println("\n[3/7] Running low speed precision tests...");
-    testLowSpeedPrecision(pwmStepper, pulseCounter);
+    testLowSpeedPrecision(stepperController);
     
     Serial.println("\n[4/7] Running overflow tests...");
-    testCounterOverflow(pwmStepper, pulseCounter);
-    
+    testCounterOverflow(stepperController);
+
     Serial.println("\n[5/7] Running position tracking demo...");
-    demonstratePositionTracking(pwmStepper, pulseCounter);
-    
+    demonstratePositionTracking(stepperController);
+
     Serial.println("\n[6/7] Running closed loop demo...");
-    demonstrateClosedLoopControl(pwmStepper, pulseCounter, driver);
-    
+    demonstrateClosedLoopControl(stepperController);
+
     Serial.println("\n[7/7] Running speed measurement demo...");
-    demonstrateSpeedMeasurement(pwmStepper, pulseCounter);
-    
+    demonstrateSpeedMeasurement(stepperController);
+
     // Print comprehensive summary
     printTestSummary();
 }
@@ -262,37 +211,37 @@ void processSerialInput() {
                 
             case TEST_HIGH_SPEED:
                 clearTestResults();
-                testHighSpeedAcceleration(pwmStepper, pulseCounter);
+                testHighSpeedAcceleration(stepperController);
                 printTestSummary();
                 break;
                 
             case TEST_LOW_SPEED:
                 clearTestResults();
-                testLowSpeedPrecision(pwmStepper, pulseCounter);
+                testLowSpeedPrecision(stepperController);
                 printTestSummary();
                 break;
                 
             case TEST_OVERFLOW:
                 clearTestResults();
-                testCounterOverflow(pwmStepper, pulseCounter);
+                testCounterOverflow(stepperController);
                 printTestSummary();
                 break;
                 
             case DEMO_POSITION_TRACKING:
                 clearTestResults();
-                demonstratePositionTracking(pwmStepper, pulseCounter);
+                demonstratePositionTracking(stepperController);
                 printTestSummary();
                 break;
                 
             case DEMO_CLOSED_LOOP:
                 clearTestResults();
-                demonstrateClosedLoopControl(pwmStepper, pulseCounter, driver);
+                demonstrateClosedLoopControl(stepperController);
                 printTestSummary();
                 break;
                 
             case DEMO_SPEED_MEASUREMENT:
                 clearTestResults();
-                demonstrateSpeedMeasurement(pwmStepper, pulseCounter);
+                demonstrateSpeedMeasurement(stepperController);
                 printTestSummary();
                 break;
                 
@@ -301,19 +250,25 @@ void processSerialInput() {
                 break;
                 
             case SHOW_SYSTEM_STATUS:
-                printSystemStatus(pwmStepper, pulseCounter, driver);
+                printSystemStatus(stepperController);
                 break;
                 
             case RESET_POSITION:
-                pulseCounter.resetPosition();
-                pulseCounterN23.resetPosition();
+                stepperController.setPosition(TMC2209, 0);
+                stepperController.setPosition(N23, 0);
                 Serial.println("Position counters reset to 0");
                 Serial.print("Primary stepper position: ");
-                Serial.println(pulseCounter.getPosition());
+                Serial.println(stepperController.getPosition(TMC2209));
                 Serial.print("N23 stepper position: ");
-                Serial.println(pulseCounterN23.getPosition());
+                Serial.println(stepperController.getPosition(N23));
                 break;
-                
+
+            case TEST_ANGLE_PRECISION:
+                clearTestResults();
+                testAnglePrecision(stepperController);
+                printTestSummary();
+                break;
+
             default:
                 Serial.println("Invalid option. Type 'h' for help.");
                 break;
@@ -331,9 +286,9 @@ void loop() {
     if (millis() - lastStatusUpdate > 30000) { // Every 30 seconds
         Serial.println("\n--- Periodic Status Update ---");
         Serial.print("Primary position: ");
-        Serial.println(pulseCounter.getPosition());
+        Serial.println(stepperController.getPosition(TMC2209));
         Serial.print("N23 position: ");
-        Serial.println(pulseCounterN23.getPosition());
+        Serial.println(stepperController.getPosition(N23));
         lastStatusUpdate = millis();
     }
     

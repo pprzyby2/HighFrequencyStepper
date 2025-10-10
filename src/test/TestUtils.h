@@ -3,8 +3,9 @@
 
 #include <Arduino.h>
 #include "PWMStepper.h"
-#include "PulseCounter.h"
 #include <TMCStepper.h>
+#include "ESP32Encoder.h"
+#include "HighFrequencyStepper.h"
 
 // Test result structure
 struct TestResult {
@@ -22,6 +23,6 @@ static int testCount = 0;
 void addTestResult(String name, bool passed, String details = "", float accuracy = 0.0);
 void printTestSummary();
 void clearTestResults();
-void printSystemStatus(PWMStepper& stepper, PulseCounter& counter, TMC2209Stepper& driver);
+void printSystemStatus(HighFrequencyStepper& stepper);
 
 #endif // TESTUTILS_H

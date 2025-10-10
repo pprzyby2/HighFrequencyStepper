@@ -1,71 +1,71 @@
 #include "DemoTests.h"
 #include "TestUtils.h"
 
-void demonstratePositionTracking(PWMStepper& stepper, PulseCounter& counter) {
+void demonstratePositionTracking(HighFrequencyStepper& controller, uint8_t index) {
     Serial.println("\n=== Position Tracking Demo ===");
-    
-    counter.resetPosition();
-    stepper.enable();
+
+    controller.setPosition(index, 0);
+    controller.enableStepper(index);
     
     Serial.println("Demonstrating position tracking with various movements...");
     
     // Demo 1: Simple forward movement
     Serial.println("\n1. Simple forward movement (1000 steps at 1kHz)");
-    stepper.setDirection(true);
-    
-    int32_t startPos = counter.getPosition();
-    stepper.startPWM(1000);
+    bool dir = true;
+
+    int32_t startPos = controller.getPosition(index);
+    controller.startContinuous(index, 1000, dir);
     delay(1000); // Exactly 1000 steps
-    stepper.stopPWM();
-    
-    int32_t endPos = counter.getPosition();
+    controller.stop(index);
+
+    int32_t endPos = controller.getPosition(index);
     Serial.print("Expected: 1000, Actual: "); Serial.println(endPos - startPos);
     
     // Demo 2: Reverse movement
     Serial.println("\n2. Reverse movement (500 steps at 2kHz)");
-    stepper.setDirection(false);
-    
-    startPos = counter.getPosition();
-    stepper.startPWM(2000);
+    dir = false;
+
+    startPos = controller.getPosition(index);
+    controller.startContinuous(index, 2000, dir);
     delay(250); // 500 steps
-    stepper.stopPWM();
-    
-    endPos = counter.getPosition();
+    controller.stop(index);
+
+    endPos = controller.getPosition(index);
     Serial.print("Expected: -500, Actual: "); Serial.println(endPos - startPos);
     
     // Demo 3: Position tracking during operation
     Serial.println("\n3. Real-time position tracking (10 seconds)");
-    stepper.setDirection(true);
-    stepper.startPWM(1500);
+    dir = true;
+    controller.startContinuous(index, 1500, dir);
     
     unsigned long startTime = millis();
     while (millis() - startTime < 10000) {
         if ((millis() - startTime) % 1000 == 0) {
             Serial.print("Time: "); Serial.print((millis() - startTime) / 1000);
-            Serial.print("s, Position: "); Serial.println(counter.getPosition());
+            Serial.print("s, Position: "); Serial.println(controller.getPosition(index));
             delay(1); // Prevent multiple prints
         }
     }
-    
-    stepper.stopPWM();
-    Serial.print("Final position: "); Serial.println(counter.getPosition());
-    
+
+    controller.stop(index);
+    Serial.print("Final position: "); Serial.println(controller.getPosition(index));
+
     addTestResult("Position Tracking Demo", true, "Completed successfully");
 }
 
-void demonstrateClosedLoopControl(PWMStepper& stepper, PulseCounter& counter, TMC2209Stepper& driver) {
+void demonstratePositionTracking(HighFrequencyStepper& controller) {
+    for (uint8_t i = 0; i < controller.getStepperCount(); i++) {
+        Serial.printf("\n--- Demonstration for Stepper %d ---\n", i);
+        demonstratePositionTracking(controller, i);
+    }
+}
+
+void demonstrateClosedLoopControl(HighFrequencyStepper& controller, uint8_t index) {
     Serial.println("\n=== Closed Loop Control Demo ===");
     
     // Enable the driver
-    driver.begin();
-    driver.toff(5);
-    driver.rms_current(800); // 800mA
-    driver.microsteps(16);
-    driver.en_spreadCycle(false);
-    driver.pwm_autoscale(true);
-    
-    counter.resetPosition();
-    stepper.enable();
+    controller.setPosition(index,0);
+    controller.enableStepper(index);
     
     Serial.println("Demonstrating closed-loop positioning...");
     
@@ -80,7 +80,7 @@ void demonstrateClosedLoopControl(PWMStepper& stepper, PulseCounter& counter, TM
         // Simple closed-loop controller
         int attempts = 0;
         while (attempts < 50) { // Max 50 attempts
-            int32_t currentPos = counter.getPosition();
+            int32_t currentPos = controller.getPosition(index);
             int32_t error = target - currentPos;
             
             if (abs(error) <= 5) { // Within 5 steps = success
@@ -89,16 +89,16 @@ void demonstrateClosedLoopControl(PWMStepper& stepper, PulseCounter& counter, TM
             }
             
             // Set direction based on error
-            stepper.setDirection(error > 0);
+            bool dir = error > 0;
             
             // Calculate speed based on error magnitude
             uint32_t speed = min(abs(error) * 10, 5000); // Proportional control
             speed = max(speed, (uint32_t)100); // Minimum speed
-            
-            stepper.startPWM(speed);
+
+            controller.startContinuous(index, speed, dir);
             delay(50); // Short move
-            stepper.stopPWM();
-            
+            controller.stop(index);
+
             attempts++;
             
             if (attempts % 10 == 0) {
@@ -114,14 +114,22 @@ void demonstrateClosedLoopControl(PWMStepper& stepper, PulseCounter& counter, TM
         
         delay(1000); // Pause between moves
     }
-    
-    Serial.print("Final position: "); Serial.println(counter.getPosition());
-    
+
+    Serial.print("Final position: "); Serial.println(controller.getPosition(index));
+
     // Test positioning accuracy
-    int32_t finalError = abs(counter.getPosition() - targets[numTargets-1]);
+    int32_t finalError = abs(controller.getPosition(index) - targets[numTargets-1]);
     bool accuracyTest = (finalError <= 10);
     addTestResult("Closed Loop Accuracy", accuracyTest, 
                   "Final error: " + String(finalError) + " steps");
     
     addTestResult("Closed Loop Demo", true, "Completed successfully");
 }
+
+void demonstrateClosedLoopControl(HighFrequencyStepper& controller) {
+    for (uint8_t i = 0; i < controller.getStepperCount(); i++) {
+        Serial.printf("\n--- Closed Loop Demo for Stepper %d ---\n", i);
+        demonstrateClosedLoopControl(controller, i);
+    }
+}
+

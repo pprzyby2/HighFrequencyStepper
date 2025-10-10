@@ -196,6 +196,73 @@ bool HighFrequencyStepper::setMaxFrequency(uint8_t index, double frequency) {
     return true;
 }
 
+uint8_t HighFrequencyStepper::getStepPin(uint8_t index) const {
+    if (!validateStepperIndex(index)) return 255;
+    return configs[index].stepPin;
+}
+
+uint8_t HighFrequencyStepper::getDirPin(uint8_t index) const {
+    if (!validateStepperIndex(index)) return 255;
+    return configs[index].dirPin;
+}
+
+uint8_t HighFrequencyStepper::getEnablePin(uint8_t index) const {
+    if (!validateStepperIndex(index)) return 255;
+    return configs[index].enablePin;
+}
+
+uint8_t HighFrequencyStepper::getStepCountPin(uint8_t index) const {
+    if (!validateStepperIndex(index)) return 255;
+    return configs[index].stepCountPin;
+}
+
+HardwareSerial* HighFrequencyStepper::getUART(uint8_t index) const {
+    if (!validateStepperIndex(index)) return nullptr;
+    return uartPorts[index];
+}
+
+float HighFrequencyStepper::getRSense(uint8_t index) const {
+    if (!validateStepperIndex(index)) return 0;
+    return configs[index].rSense;
+}
+
+uint8_t HighFrequencyStepper::getDriverAddress(uint8_t index) const {
+    if (!validateStepperIndex(index)) return 0;
+    return configs[index].driverAddress;
+}
+
+uint16_t HighFrequencyStepper::getMicrosteps(uint8_t index) const {
+    if (!validateStepperIndex(index)) return 0;
+    return configs[index].microsteps;
+}
+
+uint16_t HighFrequencyStepper::getRMSCurrent(uint8_t index) const {
+    if (!validateStepperIndex(index)) return 0;
+    return configs[index].rmsCurrent;
+}
+
+uint16_t HighFrequencyStepper::getMicrostepsPerRevolution(uint8_t index) const {
+    if (!validateStepperIndex(index)) return 0;
+    return configs[index].stepsPerRev * configs[index].microsteps;
+}
+
+double HighFrequencyStepper::getMaxFrequency(uint8_t index) const {
+    if (!validateStepperIndex(index)) return 0;
+    return configs[index].maxFrequency;
+}
+
+double HighFrequencyStepper::getAcceleration(uint8_t index) const {
+    if (!validateStepperIndex(index)) return 0;
+    return configs[index].acceleration;
+}
+
+bool HighFrequencyStepper::getInvertDirection(uint8_t index) const {
+    if (!validateStepperIndex(index)) return false;
+    return configs[index].invertDirection;
+}
+
+
+
 // Move to absolute position
 bool HighFrequencyStepper::moveToPosition(uint8_t index, int32_t position, double frequency) {
     if (!validateStepperIndex(index)) return false;
@@ -217,6 +284,11 @@ bool HighFrequencyStepper::moveRelative(uint8_t index, int32_t steps, double fre
     if (frequency > configs[index].maxFrequency) frequency = configs[index].maxFrequency;
     
     bool direction = steps > 0;
+
+    if (configs[index].invertDirection) {
+        direction = !direction;
+    }
+
     uint32_t absSteps = abs(steps);
     
     // Update target position
@@ -229,12 +301,14 @@ bool HighFrequencyStepper::moveRelative(uint8_t index, int32_t steps, double fre
     double stepDuration = 1000000.0 / frequency;
     double expectedEndTime = currentMicros + (1.5* absSteps * stepDuration);
 
-    if (configs[index].invertDirection) {
-        direction = !direction;
-    }
     pwmSteppers[index]->setDirection(direction);
     pwmSteppers[index]->startPWM(frequency);
-    while (micros() < expectedEndTime && abs(getPosition(index) - status[index].targetPosition) > 1) {
+    while (micros() < expectedEndTime) {
+        if (steps > 0 && getPosition(index) >= status[index].targetPosition){
+            break; // Avoid overshooting in forward direction
+        } else if (steps < 0 && getPosition(index) <= status[index].targetPosition) {
+            break; // Avoid overshooting in reverse direction
+        }
         vTaskDelay(1); // Yield to other tasks
     }
     pwmSteppers[index]->stopPWM();
@@ -480,6 +554,11 @@ float HighFrequencyStepper::getTemperature(uint8_t index) {
     return 25.0; // Return room temperature as default
 }
 
+bool HighFrequencyStepper::isInLEDCMode(uint8_t index) {
+    if (!validateStepperIndex(index)) return false;
+    return pwmSteppers[index]->isInLEDCMode();
+}
+
 // Check if stall is detected
 bool HighFrequencyStepper::isStallDetected(uint8_t index) {
     if (!validateStepperIndex(index)) return false;
@@ -675,4 +754,32 @@ bool HighFrequencyStepper::waitForAllCompletion(uint32_t timeoutMS) {
         
         delay(10);
     }
+}
+
+bool HighFrequencyStepper::setInterpolation(uint8_t index, bool enable) {
+    if (!validateStepperIndex(index)) return false;
+    if (!tmcDrivers[index]) return false;
+    //tmcDrivers[index]->interpolate(enable);
+}
+
+bool HighFrequencyStepper::setSpreadCycle(uint8_t index, bool enable) {
+    if (!validateStepperIndex(index)) return false;
+    if (!tmcDrivers[index]) return false;
+    tmcDrivers[index]->en_spreadCycle(enable);
+    return true;
+}
+
+bool HighFrequencyStepper::setHybridThreshold(uint8_t index, uint8_t threshold) {
+    if (!validateStepperIndex(index)) return false;
+    if (!tmcDrivers[index]) return false;
+    tmcDrivers[index]->TCOOLTHRS(threshold);
+    return true;
+}
+
+bool HighFrequencyStepper::setCoolStep(uint8_t index, uint8_t semin, uint8_t semax, uint8_t sedn, uint8_t seimin) {
+    if (!validateStepperIndex(index)) return false;
+    if (!tmcDrivers[index]) return false;
+    //tmcDrivers[index]->TCOOLTHRS(0);
+    
+    return true;
 }

@@ -3,7 +3,6 @@
 
 #include <Arduino.h>
 #include "PWMStepper.h"
-#include "PulseCounter.h"
 #include <TMCStepper.h>
 #include <ESP32Encoder.h>
 
@@ -124,6 +123,19 @@ public:
     bool setMaxFrequency(uint8_t index, double frequency);
     bool setAcceleration(uint8_t index, double acceleration);
     bool setStepsPerRevolution(uint8_t index, uint16_t steps);
+    uint8_t getStepPin(uint8_t index) const;
+    uint8_t getDirPin(uint8_t index) const;
+    uint8_t getEnablePin(uint8_t index) const;
+    uint8_t getStepCountPin(uint8_t index) const;
+    HardwareSerial* getUART(uint8_t index) const;
+    float getRSense(uint8_t index) const;
+    uint8_t getDriverAddress(uint8_t index) const;
+    uint16_t getMicrosteps(uint8_t index) const;
+    uint16_t getRMSCurrent(uint8_t index) const;
+    uint16_t getMicrostepsPerRevolution(uint8_t index) const;
+    double getMaxFrequency(uint8_t index) const;
+    double getAcceleration(uint8_t index) const;
+    bool getInvertDirection(uint8_t index) const;
     
     // Movement methods
     bool moveToPosition(uint8_t index, int32_t position, double frequency = 0);
@@ -158,8 +170,6 @@ public:
     uint16_t getStallGuardValue(uint8_t index);
     
     // PWM mode control
-    bool setLEDCResolution(uint8_t index, uint8_t resolution);
-    double getMaxLEDCFrequency(uint8_t index);
     bool isInLEDCMode(uint8_t index);
     
     // Diagnostic methods
@@ -175,7 +185,6 @@ public:
     
     // Configuration access
     StepperConfig getConfig(uint8_t index) const;
-    bool updateConfig(uint8_t index, const StepperConfig& config);
     
     // Synchronization methods
     bool moveAllToPosition(const int32_t positions[], double frequency = 0);

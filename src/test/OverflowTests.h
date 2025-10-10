@@ -3,9 +3,10 @@
 
 #include <Arduino.h>
 #include "PWMStepper.h"
-#include "PulseCounter.h"
+#include "ESP32Encoder.h"
+#include "HighFrequencyStepper.h"
 
 // Overflow test functions
-void testCounterOverflow(PWMStepper& stepper, PulseCounter& counter);
+void testCounterOverflow(HighFrequencyStepper& controller);
 
 #endif // OVERFLOWTESTS_H

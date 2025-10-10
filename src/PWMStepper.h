@@ -2,6 +2,8 @@
 #define PWMSTEPPER_H
 
 #include <Arduino.h>
+#include "ESP32Encoder.h"
+#include <vector>
 
 class PWMStepper {
 private:
@@ -18,6 +20,13 @@ private:
     double currentFreq;
     double acceleration;
     double targetFreq;
+    int64_t targetPosition;
+    int updateNumber = 0;
+    static const size_t MAX_POSITION_HISTORY = 100; // Max history size
+    std::vector<int64_t> positionHistory; // For tracking position over time
+    std::vector<uint64_t> updateTimes; // Timestamps of updates
+
+    ESP32Encoder* encoder;
     
     // Dual mode operation
     static const double FREQUENCY_THRESHOLD; // 512 Hz threshold
@@ -29,6 +38,8 @@ private:
     volatile uint32_t timerStepsRemaining;
     volatile bool timerRunning;
     volatile int interruptCount;
+    volatile double recentFreq = 0.0;
+    volatile int state = 0; // 0 = idle, 1 = accelerating, 2 = cruising, 3 = decelerating
     
     // Timer callback function
     static void IRAM_ATTR onStepTimer();
@@ -42,7 +53,7 @@ private:
     
 public:
     // Constructor
-    PWMStepper(uint8_t stepPin, uint8_t dirPin, uint8_t enablePin, uint8_t ledcChannel = 0);
+    PWMStepper(ESP32Encoder* encoder, uint8_t stepPin, uint8_t dirPin, uint8_t enablePin, uint8_t ledcChannel = 0);
     
     // Destructor for proper cleanup
     ~PWMStepper();

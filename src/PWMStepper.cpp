@@ -36,7 +36,7 @@ void initTimers() {
 }
 
 // Constructor
-PWMStepper::PWMStepper(uint8_t stepPin, uint8_t dirPin, uint8_t enablePin, uint8_t ledcChannel) {
+PWMStepper::PWMStepper(ESP32Encoder* encoder, uint8_t stepPin, uint8_t dirPin, uint8_t enablePin, uint8_t ledcChannel) {
     this->stepPin = stepPin;
     this->dirPin = dirPin;
     this->enablePin = enablePin;
@@ -52,6 +52,7 @@ PWMStepper::PWMStepper(uint8_t stepPin, uint8_t dirPin, uint8_t enablePin, uint8
     this->timerStepsRemaining = 0;
     this->timerRunning = false;
     this->acceleration = 0;
+    this->encoder = encoder;
 }
 
 // Destructor - ensure proper cleanup
@@ -86,7 +87,14 @@ void PWMStepper::begin() {
     if (pwm_stepper_timer == nullptr) {
         initTimers();
     }
-    
+
+    positionHistory.reserve(MAX_POSITION_HISTORY);
+    updateTimes.reserve(MAX_POSITION_HISTORY);
+    for (size_t i = 0; i < MAX_POSITION_HISTORY; ++i) {
+        positionHistory[i] = encoder->getCount();
+        updateTimes[i] = micros();
+    }
+
     Serial.println("PWMStepper initialized successfully!");
     Serial.print("Step Pin: "); Serial.println(stepPin);
     Serial.print("Dir Pin: "); Serial.println(dirPin);
@@ -97,6 +105,15 @@ void PWMStepper::begin() {
 }
 
 void PWMStepper::update() {
+    int64_t currentPosition = encoder->getCount();
+    positionHistory[updateNumber % MAX_POSITION_HISTORY] = currentPosition;
+    updateTimes[updateNumber % MAX_POSITION_HISTORY] = micros();
+    int64_t previousPosition = positionHistory[(updateNumber - 1 + MAX_POSITION_HISTORY) % MAX_POSITION_HISTORY];
+    uint64_t previousTime = updateTimes[(updateNumber - 1 + MAX_POSITION_HISTORY) % MAX_POSITION_HISTORY];
+    recentFreq = (currentPosition - previousPosition) * 1000000.0 / (micros() - previousTime + 1); // +1 to avoid div by zero
+
+
+
     if (acceleration != 0 && isRunning) {
         if (currentFreq < targetFreq) {
             currentFreq += acceleration * (PWM_STEPPER_TIMER_DELAY / 1000000.0); // Convert delay to seconds
@@ -112,6 +129,7 @@ void PWMStepper::update() {
             startPWM(currentFreq);
         }
     }
+    updateNumber++;
 }
 
 // Set direction
@@ -126,7 +144,6 @@ void PWMStepper::enable() {
     digitalWrite(enablePin, LOW);  // Active LOW
 }
 
-// Disable the stepper driver
 // Disable the stepper driver
 void PWMStepper::disable() {
     digitalWrite(enablePin, HIGH); // Active LOW

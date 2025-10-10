@@ -49,13 +49,6 @@ bool HighFrequencyStepper::addStepper(uint8_t index, const StepperConfig& config
     // Store configuration
     configs[index] = config;
     
-    // Create PWMStepper instance
-    pwmSteppers[index] = new PWMStepper(config.stepPin, config.dirPin, config.enablePin, config.ledcChannel);
-    if (!pwmSteppers[index]) {
-        Serial.println("ERROR: Failed to create PWMStepper instance");
-        return false;
-    }
-    
     // Create PulseCounter instance
     //pulseCounters[index] = new PulseCounter(config.pcntUnit, config.stepCountPin, config.dirPin);
     pulseCounters[index] = new ESP32Encoder();
@@ -66,7 +59,14 @@ bool HighFrequencyStepper::addStepper(uint8_t index, const StepperConfig& config
         pwmSteppers[index] = nullptr;
         return false;
     }
-    
+
+    // Create PWMStepper instance
+    pwmSteppers[index] = new PWMStepper(pulseCounters[index], config.stepPin, config.dirPin, config.enablePin, config.ledcChannel);
+    if (!pwmSteppers[index]) {
+        Serial.println("ERROR: Failed to create PWMStepper instance");
+        return false;
+    }
+        
     // Configure UART port
     uartPorts[index] = configs[index].uart;    
     
@@ -100,11 +100,6 @@ bool HighFrequencyStepper::initializeStepper(uint8_t index) {
     pwmSteppers[index]->begin();
     
     // Initialize PulseCounter
-    // if (!pulseCounters[index]->begin(configs[index].invertDirection)) {
-    //     Serial.println("ERROR: Failed to initialize PulseCounter");
-    //     return false;
-    // }
-    // pulseCounters[index]->start();
     pulseCounters[index]->setCount(0);
     
     // Initialize TMC2209
@@ -322,7 +317,6 @@ int32_t HighFrequencyStepper::getPosition(uint8_t index) {
     if (!validateStepperIndex(index)) return 0;
     
     // Get position from pulse counter
-    //int32_t pulseCount = pulseCounters[index]->getPosition();
     int32_t pulseCount = pulseCounters[index]->getCount();
     
     // Update internal position tracking
@@ -420,11 +414,6 @@ bool HighFrequencyStepper::setPosition(uint8_t index, int32_t position) {
     Serial.println(position);
     
     return true;
-}
-
-// Zero position
-bool HighFrequencyStepper::zeroPosition(uint8_t index) {
-    return setPosition(index, 0);
 }
 
 // Get stepper status

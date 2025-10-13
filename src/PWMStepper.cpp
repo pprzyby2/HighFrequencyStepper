@@ -152,6 +152,10 @@ void PWMStepper::disable() {
 
 // Start PWM at specified frequency (steps per second) - Dual Mode
 void PWMStepper::startPWM(double frequency) {
+    if (frequency == currentFreq && isRunning) {
+        // No change in frequency, do nothing
+        return;
+    }
     if (frequency == 0) {
         stopPWM();
         return;
@@ -173,6 +177,7 @@ void PWMStepper::startPWM(double frequency) {
     }
     
     isRunning = true;
+    onSpeedChange();
 }
 
 // Stop PWM - Dual Mode
@@ -241,6 +246,7 @@ void PWMStepper::startLEDCMode(double frequency) {
     // Set 50% duty cycle for square wave
     uint32_t dutyCycle = 8;  // 50% duty cycle
     ledcWrite(ledcChannel, dutyCycle);
+    onSpeedChange();
 }
 
 void PWMStepper::stopLEDCMode() {
@@ -281,6 +287,7 @@ void PWMStepper::startTimerMode(double frequency) {
     currentStepperInstance = this;
     
     timerAlarmEnable(stepTimer);  // Enable the alarm
+    onSpeedChange();
 }
 
 void PWMStepper::stopTimerMode() {
@@ -291,6 +298,11 @@ void PWMStepper::stopTimerMode() {
         stepTimer = nullptr;
         timerRunning = false;
     }
+}
+
+void PWMStepper::onSpeedChange() {
+    lastSpeedChangeMicros = micros();
+    stepsSinceLastSpeedChange = 0;
 }
 
 // Static timer callback function

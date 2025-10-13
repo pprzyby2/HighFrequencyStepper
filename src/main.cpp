@@ -34,9 +34,10 @@
 
 // N23 stepper pins (second stepper)
 #define N23_EN_PIN       15          // N23 Enable pin - BLUE
-#define N23_DIR_PIN      18          // N23 Direction pin - GREEN
-#define N23_STEP_PIN     4           // N23 Step pin - RED
-#define N23_CNT_PIN      23          // N23 Step counter input
+#define N23_DIR_PIN      26          // N23 Direction pin - GREEN
+#define N23_STEP_PIN     27           // N23 Step pin - RED
+#define N23_CNT_A_PIN    25          // N23 Step counter input A
+#define N23_CNT_B_PIN    33          // N23 Step counter input B
 
 // HighFrequencyStepper controller
 HighFrequencyStepper stepperController;
@@ -78,9 +79,9 @@ void setup() {
     configTMC2209.stepPin = STEP_PIN;           // Step pin
     configTMC2209.dirPin = DIR_PIN;            // Direction pin
     configTMC2209.enablePin = EN_PIN;         // Enable pin
-    configTMC2209.pcntUnit = PCNT_UNIT_0; // Pulse counter unit 0
     configTMC2209.invertDirection = true; // Reverse counting
-    configTMC2209.stepCountPin = STEP_CNT_PIN;      // Pulse counter pin
+    configTMC2209.encoderAPin = STEP_CNT_PIN;      // Pulse counter pin
+    configTMC2209.encoderBPin = DIR_PIN;      // Pulse counter pin
     configTMC2209.uart = &Serial2;             // UART for TMC
     configTMC2209.driverAddress = 0b00;   // TMC2209 address
     configTMC2209.rSense = 0.11f;         // Current sense resistor
@@ -95,25 +96,24 @@ void setup() {
     configN23.stepPin = N23_STEP_PIN;           // Different step pin
     configN23.dirPin = N23_DIR_PIN;             // Different direction pin
     configN23.enablePin = N23_EN_PIN;         // Can share enable pin
-    configN23.stepCountPin = N23_CNT_PIN;       // Different pulse counter pin
-    configN23.invertDirection = true;           // Reverse counting
+    configN23.encoderAPin = N23_CNT_A_PIN;       // Different pulse counter pin
+    configN23.encoderBPin = N23_CNT_B_PIN;       // Different pulse counter pin
+    configN23.encoderAttachMode = 4;           // Default to Full Quad
+    configN23.encoderToMicrostepRatio = 8;     // 8:1 ratio for N23
+    configN23.invertDirection = false;           // Reverse counting
     configN23.uart = NULL;                   // The same UART for TMC
-    configN23.driverAddress = 0b01;              // Different UART TMC address
-    configN23.rSense = 0.11f;         
     configN23.microsteps = 32;        // Different microsteps
-    configN23.rmsCurrent = 1000;      // Different current
     configN23.stepsPerRev = 200;
-    configN23.maxFrequency = (150 / 60) * 32 * 200;  // 150 RPM max frequency
+    configN23.maxFrequency = (60 / 60) * 32 * 200;  // 60 RPM max frequency
     configN23.ledcChannel = 1;        // Different LEDC channel
-    configN23.pcntUnit = PCNT_UNIT_1; // Different pulse counter unit
 
     // Add steppers to controller
-    if (!stepperController.addStepper(TMC2209, configTMC2209)) {
-        Serial.println("Failed to add stepper 0");
-        return;
-    }
+    // if (!stepperController.addStepper(TMC2209, configTMC2209)) {
+    //     Serial.println("Failed to add stepper 0");
+    //     return;
+    // }
 
-    if (!stepperController.addStepper(N23, configN23)) {
+    if (!stepperController.addStepper(0, configN23)) {
         Serial.println("Failed to add stepper 1");
         return;
     }

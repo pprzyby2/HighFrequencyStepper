@@ -40,6 +40,8 @@ private:
     volatile int interruptCount;
     volatile double recentFreq = 0.0;
     volatile int state = 0; // 0 = idle, 1 = accelerating, 2 = cruising, 3 = decelerating
+    volatile uint64_t lastSpeedChangeMicros;
+    volatile uint32_t stepsSinceLastSpeedChange;
     
     // Timer callback function
     static void IRAM_ATTR onStepTimer();
@@ -50,6 +52,7 @@ private:
     void startTimerMode(double frequency);
     void stopLEDCMode();
     void stopTimerMode();
+    void onSpeedChange();
     
 public:
     // Constructor

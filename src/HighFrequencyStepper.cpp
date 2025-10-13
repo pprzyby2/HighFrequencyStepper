@@ -52,7 +52,18 @@ bool HighFrequencyStepper::addStepper(uint8_t index, const StepperConfig& config
     // Create PulseCounter instance
     //pulseCounters[index] = new PulseCounter(config.pcntUnit, config.stepCountPin, config.dirPin);
     pulseCounters[index] = new ESP32Encoder();
-    pulseCounters[index]->attachSingleEdge(config.stepCountPin, config.dirPin);
+    if (config.encoderAttachMode == 1) {
+        pulseCounters[index]->attachSingleEdge(config.encoderAPin, config.encoderBPin);
+    } else if (config.encoderAttachMode == 2) {
+        pulseCounters[index]->attachHalfQuad(config.encoderAPin, config.encoderBPin);
+    } else if (config.encoderAttachMode == 4) {
+        pulseCounters[index]->attachFullQuad(config.encoderAPin, config.encoderBPin);
+    } else {
+        Serial.println("ERROR: Invalid encoder attach mode");
+        delete pulseCounters[index];
+        pulseCounters[index] = nullptr;
+        return false;
+    }
     if (!pulseCounters[index]) {
         Serial.println("ERROR: Failed to create PulseCounter instance");
         delete pwmSteppers[index];
@@ -213,7 +224,7 @@ uint8_t HighFrequencyStepper::getEnablePin(uint8_t index) const {
 
 uint8_t HighFrequencyStepper::getStepCountPin(uint8_t index) const {
     if (!validateStepperIndex(index)) return 255;
-    return configs[index].stepCountPin;
+    return configs[index].encoderAPin;
 }
 
 HardwareSerial* HighFrequencyStepper::getUART(uint8_t index) const {
@@ -391,7 +402,7 @@ int32_t HighFrequencyStepper::getPosition(uint8_t index) {
     if (!validateStepperIndex(index)) return 0;
     
     // Get position from pulse counter
-    int32_t pulseCount = pulseCounters[index]->getCount();
+    int32_t pulseCount = pulseCounters[index]->getCount() * configs[index].encoderToMicrostepRatio;
     
     // Update internal position tracking
     status[index].currentPosition = pulseCount;

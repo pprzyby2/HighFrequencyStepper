@@ -15,7 +15,10 @@ struct StepperConfig {
     uint8_t stepPin;
     uint8_t dirPin;
     uint8_t enablePin;
-    uint8_t stepCountPin;    // Pin for pulse counting (can be same as stepPin)
+    uint8_t encoderAPin;    // Pin for pulse counting (can be same as stepPin)
+    uint8_t encoderBPin;    // Pin for pulse counting (can be same as stepPin)
+    uint8_t encoderAttachMode; // Mode for attaching encoder (1 - Single edge, 2- HalfQuad, 4 - FullQuad)
+    uint32_t encoderToMicrostepRatio; // Ratio of encoder counts to microsteps
     HardwareSerial* uart;    // Pointer to HardwareSerial instance for TMC communication
     
     // TMC2209 configuration
@@ -35,16 +38,16 @@ struct StepperConfig {
     // LEDC configuration
     uint8_t ledcChannel;     // LEDC channel (0-15)
     
-    // PCNT configuration
-    pcnt_unit_t pcntUnit;    // PCNT unit (PCNT_UNIT_0 to PCNT_UNIT_7)
 
     // Default constructor
     StepperConfig() {
         stepPin = 0;
         dirPin = 0;
         enablePin = 0;
-        stepCountPin = 0;
-        uart = nullptr;
+        encoderAPin = 0;
+        encoderBPin = 0;
+        encoderAttachMode = 1; // Default to Single edge
+        encoderToMicrostepRatio = 1; // Default 1:1
         driverAddress = 0;
         rSense = 0.11f;
         microsteps = 16;
@@ -54,7 +57,6 @@ struct StepperConfig {
         acceleration = 1000.0;
         invertDirection = false;
         ledcChannel = 0;
-        pcntUnit = PCNT_UNIT_0;
     }
 };
 

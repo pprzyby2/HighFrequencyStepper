@@ -72,7 +72,7 @@ bool HighFrequencyStepper::addStepper(uint8_t index, const StepperConfig& config
     }
 
     // Create PWMStepper instance
-    pwmSteppers[index] = new PWMStepper(pulseCounters[index], config.stepPin, config.dirPin, config.enablePin, config.ledcChannel);
+    pwmSteppers[index] = new PWMStepper(pulseCounters[index], config.encoderToMicrostepRatio, config.stepPin, config.dirPin, config.enablePin, config.ledcChannel);
     if (!pwmSteppers[index]) {
         Serial.println("ERROR: Failed to create PWMStepper instance");
         return false;

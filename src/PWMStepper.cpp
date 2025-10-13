@@ -14,7 +14,7 @@ PWMStepper* currentStepperInstance = nullptr;
 
 // Define frequency threshold (512 Hz)
 const double PWMStepper::FREQUENCY_THRESHOLD = 512.0;
-const uint64_t PWM_STEPPER_TIMER_DELAY = 10000; // 10ms
+const uint64_t PWM_STEPPER_TIMER_DELAY = 500; // 0.5ms
 esp_timer_handle_t pwm_stepper_timer = nullptr;
 static std::vector<PWMStepper*> pwmStepperInstances;
 
@@ -36,7 +36,7 @@ void initTimers() {
 }
 
 // Constructor
-PWMStepper::PWMStepper(ESP32Encoder* encoder, uint8_t stepPin, uint8_t dirPin, uint8_t enablePin, uint8_t ledcChannel) {
+PWMStepper::PWMStepper(ESP32Encoder* encoder, int encoderScale, uint8_t stepPin, uint8_t dirPin, uint8_t enablePin, uint8_t ledcChannel) {
     this->stepPin = stepPin;
     this->dirPin = dirPin;
     this->enablePin = enablePin;
@@ -53,6 +53,7 @@ PWMStepper::PWMStepper(ESP32Encoder* encoder, uint8_t stepPin, uint8_t dirPin, u
     this->timerRunning = false;
     this->acceleration = 0;
     this->encoder = encoder;
+    this->encoderScale = encoderScale;
 }
 
 // Destructor - ensure proper cleanup
@@ -104,15 +105,14 @@ void PWMStepper::begin() {
     Serial.printf("PWM Stepper instances: %d\n", (int)pwmStepperInstances.size());
 }
 
-void PWMStepper::update() {
-    int64_t currentPosition = encoder->getCount();
+void ARDUINO_ISR_ATTR PWMStepper::update() {
+    int64_t currentPosition = encoder->getCount() * encoderScale;
+    uint64_t currentTime = micros();
     positionHistory[updateNumber % MAX_POSITION_HISTORY] = currentPosition;
-    updateTimes[updateNumber % MAX_POSITION_HISTORY] = micros();
-    int64_t previousPosition = positionHistory[(updateNumber - 1 + MAX_POSITION_HISTORY) % MAX_POSITION_HISTORY];
-    uint64_t previousTime = updateTimes[(updateNumber - 1 + MAX_POSITION_HISTORY) % MAX_POSITION_HISTORY];
-    recentFreq = (currentPosition - previousPosition) * 1000000.0 / (micros() - previousTime + 1); // +1 to avoid div by zero
-
-
+    updateTimes[updateNumber % MAX_POSITION_HISTORY] = currentTime;
+    // int64_t previousPosition = positionHistory[(updateNumber - 1 + MAX_POSITION_HISTORY) % MAX_POSITION_HISTORY];
+    // uint64_t previousTime = updateTimes[(updateNumber - 1 + MAX_POSITION_HISTORY) % MAX_POSITION_HISTORY];
+    // recentFreq = (currentPosition - previousPosition) * 1000000.0 / (currentTime - previousTime + 1); // +1 to avoid div by zero
 
     if (acceleration != 0 && isRunning) {
         if (currentFreq < targetFreq) {
@@ -129,6 +129,20 @@ void PWMStepper::update() {
             startPWM(currentFreq);
         }
     }
+
+    if (!isInLEDCMode() && isRunning && currentFreq > 0) {
+        uint64_t microsSinceLastSpeedChange = currentTime - lastSpeedChangeMicros;
+        double expectedMicrostepPeriod = 1000000.0 / abs(currentFreq * 2); // Period in microseconds
+        uint64_t expectedNumberOfSteps = (uint64_t) (double(microsSinceLastSpeedChange) / expectedMicrostepPeriod);
+        if (expectedNumberOfSteps <= stepsSinceLastSpeedChange) {
+            return; // Not time for the next step yet
+        }
+        int stepPinState = digitalRead(stepPin); // Read current state
+        pinMode(stepPin, OUTPUT);
+        digitalWrite(stepPin, !stepPinState); // Start new period with toggled state   
+        stepsSinceLastSpeedChange++;     
+    }
+
     updateNumber++;
 }
 
@@ -173,7 +187,7 @@ void PWMStepper::startPWM(double frequency) {
         // Low frequency - use Timer mode
         isLEDCMode = false;
         stopLEDCMode(); // Stop LEDC mode if running
-        startTimerMode(frequency);
+        //startTimerMode(frequency);
     }
     
     isRunning = true;
@@ -312,8 +326,6 @@ void IRAM_ATTR PWMStepper::onStepTimer() {
         currentStepperInstance->handleStepTimer();
     }
 }
-
-
 
 // Timer callback function
 void IRAM_ATTR PWMStepper::handleStepTimer() {

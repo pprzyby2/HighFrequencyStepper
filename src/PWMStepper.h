@@ -27,6 +27,7 @@ private:
     std::vector<uint64_t> updateTimes; // Timestamps of updates
 
     ESP32Encoder* encoder;
+    int encoderScale = 1; // Scale factor for encoder counts to steps
     
     // Dual mode operation
     static const double FREQUENCY_THRESHOLD; // 512 Hz threshold
@@ -56,7 +57,7 @@ private:
     
 public:
     // Constructor
-    PWMStepper(ESP32Encoder* encoder, uint8_t stepPin, uint8_t dirPin, uint8_t enablePin, uint8_t ledcChannel = 0);
+    PWMStepper(ESP32Encoder* encoder, int encoderScale, uint8_t stepPin, uint8_t dirPin, uint8_t enablePin, uint8_t ledcChannel = 0);
     
     // Destructor for proper cleanup
     ~PWMStepper();

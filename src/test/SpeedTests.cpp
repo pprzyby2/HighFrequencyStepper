@@ -3,7 +3,7 @@
 #include "HighFrequencyStepper.h"
 
 void testHighSpeedAcceleration(HighFrequencyStepper& controller, uint8_t index) {
-    Serial.println("\n=== High Speed Acceleration Test (up to 200kHz) ===");
+    Serial.printf("\n=== High Speed Acceleration Test (up to %fkHz) ===\n", controller.getMaxFrequency(index) / 1000);
     
     controller.setPosition(index, 0);
     controller.enableStepper(index);
@@ -17,15 +17,14 @@ void testHighSpeedAcceleration(HighFrequencyStepper& controller, uint8_t index) 
     int numSpeeds = 0;
     for (int i = 5; i < 100; i += 5) {
         numSpeeds++;
-        uint32_t speed = controller.getMaxFrequency(index) * i / 100; // From 5% to 100%
-        Serial.print("Setting speed to: "); Serial.print(speed); Serial.println(" Hz");
+        double speed = controller.getMaxFrequency(index) * i / 100.0; // From 5% to 100%
+        Serial.printf("Setting speed to: %.2f Hz\n", speed);
 
+
+        controller.accelerateToFrequency(index, speed, dir, true);
         int32_t startPos = controller.getPosition(index);
         uint32_t startTime = millis();
-
-        controller.startContinuous(index, speed, dir);
         delay(1000); // Run for 1 second at each speed
-        controller.stop(index);
 
         uint32_t endTime = millis();
         int32_t endPos = controller.getPosition(index);

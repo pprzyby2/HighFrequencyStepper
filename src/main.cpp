@@ -21,6 +21,7 @@
 #include "test/OverflowTests.h"
 #include "test/DemoTests.h"
 #include "test/AngleTests.h"
+#include "test/MaxSpeedTest.h"
 
 // Pin definitions
 #define EN_PIN           23          // Enable - PURPLE
@@ -38,6 +39,12 @@
 #define N23_STEP_PIN     27           // N23 Step pin - RED
 #define N23_CNT_A_PIN    25          // N23 Step counter input A
 #define N23_CNT_B_PIN    33          // N23 Step counter input B
+
+#define N23_2_EN_PIN       18          // N23 Enable pin - BLUE
+#define N23_2_DIR_PIN      19          // N23 Direction pin - GREEN
+#define N23_2_STEP_PIN     14           // N23 Step pin - RED
+#define N23_2_CNT_A_PIN    32          // N23 Step counter input A
+#define N23_2_CNT_B_PIN    35          // N23 Step counter input B
 
 // HighFrequencyStepper controller
 HighFrequencyStepper stepperController;
@@ -64,6 +71,8 @@ enum TestOption {
     RUN_ALL_TESTS = 8,
     SHOW_SYSTEM_STATUS = 9,
     TEST_ANGLE_PRECISION = 10,
+    TEST_MAX_SPEED = 11,
+    TEST_ASYNC_MOVEMENT = 12,
     RESET_POSITION = 0
 };
 
@@ -104,9 +113,27 @@ void setup() {
     configN23.uart = NULL;                   // The same UART for TMC
     configN23.microsteps = 32;        // Different microsteps
     configN23.stepsPerRev = 200;
-    configN23.maxFrequency = (60 / 60) * 32 * 200;  // 60 RPM max frequency
+    configN23.maxFrequency = (360 / 60) * 32 * 200;  // 360 RPM max frequency
+    configN23.acceleration = 10000.0;          // Different acceleration
     configN23.ledcChannel = 1;        // Different LEDC channel
 
+    StepperConfig configN23_2;
+    configN23_2.stepPin = N23_2_STEP_PIN;           // Different step pin
+    configN23_2.dirPin = N23_2_DIR_PIN;             // Different direction pin
+    configN23_2.enablePin = N23_2_EN_PIN;         // Can share enable pin
+    configN23_2.encoderAPin = N23_2_CNT_A_PIN;       // Different pulse counter pin
+    configN23_2.encoderBPin = N23_2_CNT_B_PIN;       // Different pulse counter pin
+    configN23_2.encoderAttachMode = 4;           // Default to Full Quad
+    configN23_2.encoderToMicrostepRatio = 8;     // 8:1 ratio for N23
+    configN23_2.invertDirection = false;           // Reverse counting
+    configN23_2.uart = NULL;                   // The same UART for TMC
+    configN23_2.microsteps = 32;        // Different microsteps
+    configN23_2.stepsPerRev = 200;
+    configN23_2.maxFrequency = (360 / 60) * 32 * 200;  // 360 RPM max frequency
+    configN23_2.acceleration = 10000.0;          // Different acceleration
+    configN23_2.ledcChannel = 2;        // Different LEDC channel
+
+    
     // Add steppers to controller
     // if (!stepperController.addStepper(TMC2209, configTMC2209)) {
     //     Serial.println("Failed to add stepper 0");
@@ -117,7 +144,12 @@ void setup() {
         Serial.println("Failed to add stepper 1");
         return;
     }
-    
+
+    if (!stepperController.addStepper(1, configN23_2)) {
+        Serial.println("Failed to add stepper 2");
+        return;
+    }
+
     // Initialize all steppers
     if (!stepperController.initializeAll()) {
         Serial.println("Failed to initialize steppers");
@@ -150,6 +182,9 @@ void printTestMenu() {
     Serial.println("8. Run ALL Tests");
     Serial.println("9. Show System Status");
     Serial.println("0. Reset Position Counter");
+    Serial.println("10. Angle Precision Test");
+    Serial.println("11. Max Speed Test");
+    Serial.println("12. Asynchronous Movement Test");
     Serial.println("\nEnter test number (or 'h' for help): ");
 }
 
@@ -266,6 +301,18 @@ void processSerialInput() {
             case TEST_ANGLE_PRECISION:
                 clearTestResults();
                 testAnglePrecision(stepperController);
+                printTestSummary();
+                break;
+
+            case TEST_MAX_SPEED:
+                clearTestResults();
+                testMaxSpeed(stepperController);
+                printTestSummary();
+                break;
+
+            case TEST_ASYNC_MOVEMENT:
+                clearTestResults();
+                testAsyncMovement(stepperController);
                 printTestSummary();
                 break;
 

@@ -124,7 +124,6 @@ public:
     bool setRMSCurrent(uint8_t index, uint16_t currentMA);
     bool setMaxFrequency(uint8_t index, double frequency);
     bool setAcceleration(uint8_t index, double acceleration);
-    bool setStepsPerRevolution(uint8_t index, uint16_t steps);
     uint8_t getStepPin(uint8_t index) const;
     uint8_t getDirPin(uint8_t index) const;
     uint8_t getEnablePin(uint8_t index) const;
@@ -142,6 +141,8 @@ public:
     // Movement methods
     bool moveToPosition(uint8_t index, int32_t position, double frequency = 0);
     bool moveRelative(uint8_t index, int32_t steps, double frequency = 0);
+    bool moveToPositionAsync(uint8_t index, int32_t position, double maxFrequency = 0);
+    bool accelerateToFrequency(uint8_t index, double frequency, bool direction, bool waitForCompletion = false);
     bool startContinuous(uint8_t index, double frequency, bool direction = true);
     bool stop(uint8_t index);
     bool stopAll();

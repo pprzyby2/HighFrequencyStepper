@@ -133,3 +133,41 @@ void demonstrateClosedLoopControl(HighFrequencyStepper& controller) {
     }
 }
 
+void testAsyncMovement(HighFrequencyStepper& stepper) {
+    Serial.println("\n=== Asynchronous Movement Demo ===");
+    
+    // Enable all steppers
+    stepper.enableAll();
+    
+    
+    // Define target positions for each stepper
+    int numSteppers = stepper.getStepperCount();
+    
+    // Start asynchronous movements
+    for (uint8_t i = 0; i < numSteppers; i++) {
+        stepper.setPosition(i, 0); // Reset position
+        int maxFreq = stepper.getMaxFrequency(i); // Just to ensure it's configured
+        int fullCircle = stepper.getMicrostepsPerRevolution(i);
+        printf("Stepper %d max frequency: %d Hz, steps/rev: %d, target 50 circles: %d\n", i, maxFreq, fullCircle, fullCircle * 50);
+        stepper.moveToPositionAsync(i, fullCircle * 50, maxFreq); // Move at max frequency
+    }
+    
+    // Monitor progress
+    bool allDone = false;
+    while (!allDone) {
+        allDone = true;
+        for (uint8_t i = 0; i < numSteppers; i++) {
+            if (stepper.isMoving(i)) {
+                allDone = false;
+                Serial.printf("Stepper %d current position: %d, target position: %d, current frequency: %f\n", i, stepper.getPosition(i), stepper.getTargetPosition(i), stepper.getCurrentFrequency(i));
+            } else {
+                Serial.printf("Stepper %d reached target position: %d\n", i, stepper.getPosition(i));
+            }
+        }
+        delay(500); // Update every 500ms
+    }
+    
+    Serial.println("All steppers have reached their target positions.");
+    
+    addTestResult("Asynchronous Movement Demo", true, "Completed successfully");
+}

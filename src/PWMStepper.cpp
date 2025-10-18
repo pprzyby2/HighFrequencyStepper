@@ -6,6 +6,7 @@
 #include "esp_attr.h"
 #include "esp_log.h"
 #include <vector>
+#include <algorithm>
 
 
 
@@ -54,6 +55,8 @@ PWMStepper::PWMStepper(ESP32Encoder* encoder, int encoderScale, uint8_t stepPin,
     this->acceleration = 0;
     this->encoder = encoder;
     this->encoderScale = encoderScale;
+    this->targetPosition = 0;
+    this->interruptCount = 0;
 }
 
 // Destructor - ensure proper cleanup
@@ -114,7 +117,35 @@ void ARDUINO_ISR_ATTR PWMStepper::update() {
     // uint64_t previousTime = updateTimes[(updateNumber - 1 + MAX_POSITION_HISTORY) % MAX_POSITION_HISTORY];
     // recentFreq = (currentPosition - previousPosition) * 1000000.0 / (currentTime - previousTime + 1); // +1 to avoid div by zero
 
-    if (acceleration != 0 && isRunning) {
+    if (isRunning && targetPosition) {
+        if (abs(currentPosition - targetPosition) >= encoderScale) {
+            int64_t error = targetPosition - currentPosition;
+            targetFreq = std::min(maxFreq, int64_t(abs(0.5 * error))); // Simple proportional control
+            double newFreq = currentFreq;
+            if (acceleration != 0) {
+                if (newFreq < targetFreq) {
+                    newFreq += acceleration * (PWM_STEPPER_TIMER_DELAY / 1000000.0); // Convert delay to seconds
+                    if (newFreq > targetFreq) {
+                        newFreq = targetFreq;
+                    }
+                    startPWM(newFreq);
+                } else if (newFreq > targetFreq) {
+                    newFreq -= acceleration * (PWM_STEPPER_TIMER_DELAY / 1000000.0); // Convert delay to seconds
+                    if (newFreq < targetFreq) {
+                        newFreq = targetFreq;
+                    }
+                    startPWM(newFreq);
+                }
+            }        
+        }  else {
+            // Reached target
+            stopPWM();
+            isRunning = false;
+            currentFreq = 0;
+        }
+    }
+
+    if (accelerationEnabled && acceleration != 0 && isRunning) {
         if (currentFreq < targetFreq) {
             currentFreq += acceleration * (PWM_STEPPER_TIMER_DELAY / 1000000.0); // Convert delay to seconds
             if (currentFreq > targetFreq) {
@@ -164,16 +195,25 @@ void PWMStepper::disable() {
     stopPWM();  // Also stop any running PWM
 }
 
+void PWMStepper::accelerateToFrequency(double frequency) {
+    targetFreq = frequency;
+    accelerationEnabled = true;
+    isRunning = true;
+    targetPosition = 0; // Clear target position
+    onSpeedChange();
+}
+
+void PWMStepper::immediateChangeFrequency(double frequency) {
+    targetFreq = frequency;
+    currentFreq = frequency;
+    accelerationEnabled = false;
+    isRunning = true;
+    targetPosition = 0; // Clear target position
+    startPWM(frequency);
+}
+
 // Start PWM at specified frequency (steps per second) - Dual Mode
 void PWMStepper::startPWM(double frequency) {
-    if (frequency == currentFreq && isRunning) {
-        // No change in frequency, do nothing
-        return;
-    }
-    if (frequency == 0) {
-        stopPWM();
-        return;
-    }
     
     currentFreq = frequency;
     
@@ -226,6 +266,11 @@ void PWMStepper::setFrequency(double frequency) {
 
 void PWMStepper::setAcceleration(double accel) {
     acceleration = accel;
+}
+
+void PWMStepper::setTargetPosition(int64_t position) {
+    targetPosition = position;
+    isRunning = true;
 }
 
 // Get current status

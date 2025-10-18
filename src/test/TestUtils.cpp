@@ -1,7 +1,7 @@
 #include "TestUtils.h"
 
 void addTestResult(String name, bool passed, String details, float accuracy) {
-    if (testCount < 30) {
+    if (testCount < 150) {
         testResults[testCount].testName = name;
         testResults[testCount].passed = passed;
         testResults[testCount].details = details;

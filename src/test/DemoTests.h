@@ -10,5 +10,6 @@
 // Demonstration test functions
 void demonstratePositionTracking(HighFrequencyStepper& stepper);
 void demonstrateClosedLoopControl(HighFrequencyStepper& stepper);
+void testAsyncMovement(HighFrequencyStepper& stepper);
 
 #endif // DEMOTESTS_H

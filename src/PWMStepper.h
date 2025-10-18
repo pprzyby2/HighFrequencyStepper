@@ -16,10 +16,12 @@ private:
     uint8_t ledcResolution;
     
     bool isRunning;
+    bool accelerationEnabled;
     bool direction;  // true = forward, false = reverse
     double currentFreq;
     double acceleration;
     double targetFreq;
+    int64_t maxFreq;
     int64_t targetPosition;
     int updateNumber = 0;
     static const size_t MAX_POSITION_HISTORY = 100; // Max history size
@@ -74,6 +76,8 @@ public:
     
     // Start PWM at specified frequency (steps per second)
     void startPWM(double frequency);
+    void accelerateToFrequency(double frequency);
+    void immediateChangeFrequency(double frequency);
     
     // Stop PWM
     void stopPWM();
@@ -82,6 +86,9 @@ public:
     void setTargetFrequency(double frequency);
     void setFrequency(double frequency);
     void setAcceleration(double accel);
+    void setAccelerationEnabled(bool enabled) { accelerationEnabled = enabled; }
+    void setTargetPosition(int64_t position);
+    void setMaxFreq(int64_t maxFrequency) { maxFreq = maxFrequency; }   
     
     // Get current status
     bool isEnabled() const;
@@ -89,6 +96,7 @@ public:
     double getFrequency() const;
     bool isInLEDCMode() const;
     int getInterruptCount() const { return interruptCount; } // For debugging
+    bool getAccelerationEnabled() const { return accelerationEnabled; }
     
     // Utility functions
     void step(uint32_t steps, double frequency, bool dir);

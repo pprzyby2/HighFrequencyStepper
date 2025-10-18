@@ -16,7 +16,7 @@ struct TestResult {
 };
 
 // Global test results tracking
-static TestResult testResults[30]; // Increased capacity
+static TestResult testResults[150]; // Increased capacity
 static int testCount = 0;
 
 // Test utility functions

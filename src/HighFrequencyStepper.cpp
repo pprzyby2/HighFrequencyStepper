@@ -108,6 +108,8 @@ bool HighFrequencyStepper::initializeStepper(uint8_t index) {
     }
     
     // Initialize PWMStepper
+    pwmSteppers[index]->setMaxFreq(configs[index].maxFrequency);
+    pwmSteppers[index]->setAcceleration(configs[index].acceleration);    
     pwmSteppers[index]->begin();
     
     // Initialize PulseCounter
@@ -207,6 +209,20 @@ bool HighFrequencyStepper::setMaxFrequency(uint8_t index, double frequency) {
     return true;
 }
 
+bool HighFrequencyStepper::setAcceleration(uint8_t index, double acceleration) {
+    if (!validateStepperIndex(index)) return false;
+    
+    configs[index].acceleration = acceleration;
+    
+    Serial.print("Stepper ");
+    Serial.print(index);
+    Serial.print(" acceleration set to ");
+    Serial.print(acceleration);
+    Serial.println(" Hz/s");
+    
+    return true;
+}
+
 uint8_t HighFrequencyStepper::getStepPin(uint8_t index) const {
     if (!validateStepperIndex(index)) return 255;
     return configs[index].stepPin;
@@ -286,6 +302,42 @@ bool HighFrequencyStepper::moveToPosition(uint8_t index, int32_t position, doubl
     return moveRelative(index, steps, frequency);
 }
 
+bool HighFrequencyStepper::moveToPositionAsync(uint8_t index, int32_t position, double maxFrequency) {
+    if (!validateStepperIndex(index)) return false;
+    
+    if (maxFrequency == 0) maxFrequency = configs[index].maxFrequency;
+    
+    int32_t currentPos = getPosition(index);
+    int32_t steps = position - currentPos;
+    if (steps == 0) return true; // Already at position
+    
+    bool direction = steps > 0;
+    if (configs[index].invertDirection) {
+        direction = !direction;
+    }
+    
+    // Update target position
+    status[index].targetPosition = position;
+    status[index].isMoving = true;
+    status[index].targetFrequency = maxFrequency;
+    
+    // Start movement without blocking
+    pwmSteppers[index]->setDirection(direction);
+    pwmSteppers[index]->setMaxFreq(maxFrequency);
+    pwmSteppers[index]->setTargetPosition(position);
+    pwmSteppers[index]->setAcceleration(configs[index].acceleration);
+    
+    Serial.print("Stepper ");
+    Serial.print(index);
+    Serial.print(" started async move to position ");
+    Serial.print(position);
+    Serial.print(" at max frequency ");
+    Serial.print(maxFrequency);
+    Serial.println(" Hz");
+    
+    return true;
+}
+
 // Move relative steps
 bool HighFrequencyStepper::moveRelative(uint8_t index, int32_t steps, double frequency) {
     if (!validateStepperIndex(index)) return false;
@@ -328,6 +380,31 @@ bool HighFrequencyStepper::moveRelative(uint8_t index, int32_t steps, double fre
     updatePosition(index);
 
     return abs(getPosition(index) - status[index].targetPosition) > 1 ? false : true;
+}
+
+bool HighFrequencyStepper::accelerateToFrequency(uint8_t index, double frequency, bool direction, bool waitForCompletion) { 
+    if (!validateStepperIndex(index)) return false;
+    
+    if (frequency > configs[index].maxFrequency) frequency = configs[index].maxFrequency;
+    
+    status[index].isMoving = true;
+    status[index].currentFrequency = frequency;
+    
+    if (configs[index].invertDirection) {
+        direction = !direction;
+    }
+    pwmSteppers[index]->setDirection(direction);
+    pwmSteppers[index]->accelerateToFrequency(frequency);
+    pwmSteppers[index]->startPWM(pwmSteppers[index]->getFrequency());
+    
+    if (waitForCompletion) {
+        // Wait until target frequency is reached
+        while (abs(pwmSteppers[index]->getFrequency() - frequency) > 1.0) {
+            vTaskDelay(1); // Yield to other tasks
+        }
+    }
+    
+    return true;
 }
 
 // Start continuous movement
@@ -418,7 +495,7 @@ void HighFrequencyStepper::updatePosition(uint8_t index) {
     status[index].currentPosition = getPosition(index);
     
     // Check if movement is complete
-    if (abs(status[index].currentPosition - status[index].targetPosition) <= 1) {
+    if (pwmSteppers[index]->getFrequency() == 0) {
         status[index].isMoving = false;
         status[index].currentFrequency = 0;
     }
@@ -692,7 +769,7 @@ int32_t HighFrequencyStepper::getTargetPosition(uint8_t index) {
 
 double HighFrequencyStepper::getCurrentFrequency(uint8_t index) {
     if (!validateStepperIndex(index)) return 0.0;
-    return status[index].currentFrequency;
+    return pwmSteppers[index]->getFrequency();
 }
 
 bool HighFrequencyStepper::isAtPosition(uint8_t index, int32_t tolerance) {

@@ -105,6 +105,7 @@ void setup() {
     configN23.stepPin = N23_STEP_PIN;           // Different step pin
     configN23.dirPin = N23_DIR_PIN;             // Different direction pin
     configN23.enablePin = N23_EN_PIN;         // Can share enable pin
+    configN23.stepperEnabledHigh = true;       // Active HIGH
     configN23.encoderAPin = N23_CNT_A_PIN;       // Different pulse counter pin
     configN23.encoderBPin = N23_CNT_B_PIN;       // Different pulse counter pin
     configN23.encoderAttachMode = 4;           // Default to Full Quad
@@ -121,6 +122,7 @@ void setup() {
     configN23_2.stepPin = N23_2_STEP_PIN;           // Different step pin
     configN23_2.dirPin = N23_2_DIR_PIN;             // Different direction pin
     configN23_2.enablePin = N23_2_EN_PIN;         // Can share enable pin
+    configN23_2.stepperEnabledHigh = true;       // Active HIGH
     configN23_2.encoderAPin = N23_2_CNT_A_PIN;       // Different pulse counter pin
     configN23_2.encoderBPin = N23_2_CNT_B_PIN;       // Different pulse counter pin
     configN23_2.encoderAttachMode = 4;           // Default to Full Quad
@@ -196,28 +198,43 @@ void runAllTests() {
     clearTestResults();
     
     // Run all tests in sequence
-    Serial.println("\n[1/7] Running direction tests...");
+    Serial.println("\n[1/12] Running direction tests...");
     for (int i = 0; i < stepperController.getStepperCount(); i++) {
         testDirectionChanges(stepperController, i);
     }
 
-    Serial.println("\n[2/7] Running high speed tests...");
+    Serial.println("\n[2/12] Running high speed tests...");
     testHighSpeedAcceleration(stepperController);
-    
-    Serial.println("\n[3/7] Running low speed precision tests...");
+
+    Serial.println("\n[3/12] Running low speed precision tests...");
     testLowSpeedPrecision(stepperController);
-    
-    Serial.println("\n[4/7] Running overflow tests...");
+
+    Serial.println("\n[4/12] Running overflow tests...");
     testCounterOverflow(stepperController);
 
-    Serial.println("\n[5/7] Running position tracking demo...");
+    Serial.println("\n[5/12] Running position tracking demo...");
     demonstratePositionTracking(stepperController);
 
-    Serial.println("\n[6/7] Running closed loop demo...");
+    Serial.println("\n[6/12] Running closed loop demo...");
     demonstrateClosedLoopControl(stepperController);
 
-    Serial.println("\n[7/7] Running speed measurement demo...");
+    Serial.println("\n[7/12] Running speed measurement demo...");
     demonstrateSpeedMeasurement(stepperController);
+
+    Serial.println("[8/12] Running angle precision test...");
+    testAnglePrecision(stepperController);
+
+    Serial.println("[9/12] Running max speed test...");
+    testMaxSpeed(stepperController);
+
+    Serial.println("[10/12] Running asynchronous movement test...");
+    //testAsynchronousMovement(stepperController);
+
+    Serial.println("[11/12] Running advanced trajectory test...");
+    //testAdvancedTrajectory(stepperController);
+
+    Serial.println("[12/12] Running comprehensive system test...");
+    //testComprehensiveSystem(stepperController);
 
     // Print comprehensive summary
     printTestSummary();

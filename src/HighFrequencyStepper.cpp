@@ -109,6 +109,7 @@ bool HighFrequencyStepper::initializeStepper(uint8_t index) {
     
     // Initialize PWMStepper
     pwmSteppers[index]->setMaxFreq(configs[index].maxFrequency);
+    pwmSteppers[index]->setStepperEnabledHigh(configs[index].stepperEnabledHigh);
     pwmSteppers[index]->setAcceleration(configs[index].acceleration);    
     pwmSteppers[index]->begin();
     
@@ -323,7 +324,7 @@ bool HighFrequencyStepper::moveToPositionAsync(uint8_t index, int32_t position, 
     
     // Start movement without blocking
     pwmSteppers[index]->setDirection(direction);
-    pwmSteppers[index]->setMaxFreq(maxFrequency);
+    pwmSteppers[index]->setTargetFrequency(maxFrequency);
     pwmSteppers[index]->setTargetPosition(position);
     pwmSteppers[index]->setAcceleration(configs[index].acceleration);
     
@@ -365,7 +366,7 @@ bool HighFrequencyStepper::moveRelative(uint8_t index, int32_t steps, double fre
     double expectedEndTime = currentMicros + (1.5* absSteps * stepDuration);
 
     pwmSteppers[index]->setDirection(direction);
-    pwmSteppers[index]->startPWM(frequency);
+    pwmSteppers[index]->moveAtFrequency(frequency);
     while (micros() < expectedEndTime) {
         if (steps > 0 && getPosition(index) >= status[index].targetPosition){
             break; // Avoid overshooting in forward direction
@@ -395,7 +396,6 @@ bool HighFrequencyStepper::accelerateToFrequency(uint8_t index, double frequency
     }
     pwmSteppers[index]->setDirection(direction);
     pwmSteppers[index]->accelerateToFrequency(frequency);
-    pwmSteppers[index]->startPWM(pwmSteppers[index]->getFrequency());
     
     if (waitForCompletion) {
         // Wait until target frequency is reached
@@ -420,13 +420,9 @@ bool HighFrequencyStepper::startContinuous(uint8_t index, double frequency, bool
         direction = !direction;
     }
     pwmSteppers[index]->setDirection(direction);
-    pwmSteppers[index]->startPWM(frequency);
-    
-    Serial.print("Stepper ");
-    Serial.print(index);
-    Serial.print(" started continuous movement at ");
-    Serial.print(frequency);
-    Serial.println(" Hz");
+    pwmSteppers[index]->moveAtFrequency(frequency);
+
+    Serial.printf("Stepper %d started continuous movement at %.1f Hz\n", index, frequency);
     
     return true;
 }
@@ -614,7 +610,7 @@ void HighFrequencyStepper::printStatus(uint8_t index) {
     Serial.println("StallGuard: " + String(stat.stallGuard ? "DETECTED" : "OK"));
     Serial.println("Microsteps: " + String(configs[index].microsteps));
     Serial.println("RMS Current: " + String(configs[index].rmsCurrent) + " mA");
-    Serial.println("Mode: " + String(pwmSteppers[index]->isInLEDCMode() ? "LEDC" : "Timer"));
+    Serial.println("Mode: " + String(pwmSteppers[index]->getMode() == MODE_LEDC ? "LEDC" : "Timer"));
     Serial.println("==========================");
 }
 
@@ -644,7 +640,7 @@ float HighFrequencyStepper::getTemperature(uint8_t index) {
 
 bool HighFrequencyStepper::isInLEDCMode(uint8_t index) {
     if (!validateStepperIndex(index)) return false;
-    return pwmSteppers[index]->isInLEDCMode();
+    return pwmSteppers[index]->getMode() == MODE_LEDC;
 }
 
 // Check if stall is detected

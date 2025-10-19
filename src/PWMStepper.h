@@ -5,6 +5,18 @@
 #include "ESP32Encoder.h"
 #include <vector>
 
+enum StepperState {
+    STEPPER_OFF = 0,
+    STEPPER_IDLE = 1,
+    STEPPER_MOVE_TO_POSITION = 2,
+    STEPPER_MOVE_WITH_FREQUENCY = 3
+};
+
+enum StepperMode {
+    MODE_LEDC = 0,
+    MODE_TIMER = 1
+};
+
 class PWMStepper {
 private:
     uint8_t stepPin;
@@ -14,14 +26,16 @@ private:
     uint8_t ledcChannel;
     uint32_t ledcFrequency;
     uint8_t ledcResolution;
-    
-    bool isRunning;
-    bool accelerationEnabled;
+
+    StepperState state;
+    StepperMode mode;
+
+    bool stepperEnabledHigh; // true if enable pin is active HIGH
     bool direction;  // true = forward, false = reverse
     double currentFreq;
     double acceleration;
-    double targetFreq;
     int64_t maxFreq;
+    double targetFreq;
     int64_t targetPosition;
     int updateNumber = 0;
     static const size_t MAX_POSITION_HISTORY = 100; // Max history size
@@ -33,29 +47,19 @@ private:
     
     // Dual mode operation
     static const double FREQUENCY_THRESHOLD; // 512 Hz threshold
-    bool isLEDCMode;
     
     // Timer mode variables
-    hw_timer_t* stepTimer;
-    volatile bool timerStepState;
-    volatile uint32_t timerStepsRemaining;
-    volatile bool timerRunning;
-    volatile int interruptCount;
-    volatile double recentFreq = 0.0;
-    volatile int state = 0; // 0 = idle, 1 = accelerating, 2 = cruising, 3 = decelerating
     volatile uint64_t lastSpeedChangeMicros;
     volatile uint32_t stepsSinceLastSpeedChange;
-    
-    // Timer callback function
-    static void IRAM_ATTR onStepTimer();
-    void IRAM_ATTR handleStepTimer();
     
     // Mode selection methods
     void startLEDCMode(double frequency);
     void startTimerMode(double frequency);
     void stopLEDCMode();
     void stopTimerMode();
-    void onSpeedChange();
+    void onSpeedChange(double frequency, bool dir);
+    void startPWM(double frequency);
+
     
 public:
     // Constructor
@@ -75,9 +79,8 @@ public:
     void disable();
     
     // Start PWM at specified frequency (steps per second)
-    void startPWM(double frequency);
     void accelerateToFrequency(double frequency);
-    void immediateChangeFrequency(double frequency);
+    void moveAtFrequency(double frequency);
     
     // Stop PWM
     void stopPWM();
@@ -86,27 +89,21 @@ public:
     void setTargetFrequency(double frequency);
     void setFrequency(double frequency);
     void setAcceleration(double accel);
-    void setAccelerationEnabled(bool enabled) { accelerationEnabled = enabled; }
     void setTargetPosition(int64_t position);
     void setMaxFreq(int64_t maxFrequency) { maxFreq = maxFrequency; }   
+    void setStepperEnabledHigh(bool enabled) { stepperEnabledHigh = enabled; }
     
     // Get current status
     bool isEnabled() const;
     bool getDirection() const;
     double getFrequency() const;
-    bool isInLEDCMode() const;
-    int getInterruptCount() const { return interruptCount; } // For debugging
-    bool getAccelerationEnabled() const { return accelerationEnabled; }
+    StepperMode getMode() const;
     
     // Utility functions
     void step(uint32_t steps, double frequency, bool dir);
     void moveSteps(int32_t steps, double frequency);
     void update();
-    
-    // Timer mode specific functions
-    void stepTimerMode(uint32_t steps, double frequency, bool dir);
-    bool isTimerStepComplete() const;
-    
+        
     // Advanced functions
     void setLEDCResolution(uint8_t resolution);
     void setLEDCChannel(uint8_t channel);

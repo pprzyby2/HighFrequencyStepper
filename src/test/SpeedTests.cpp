@@ -77,6 +77,7 @@ void testLowSpeedPrecision(HighFrequencyStepper& controller, uint8_t index) {
     controller.setPosition(index, 0);
     controller.enableStepper(index);
     bool dir = true;
+    int toleranceSteps = controller.getConfig(index).encoderToMicrostepRatio; // Allowable error within one encoder count
     
     // Test very low frequencies (should use Timer mode)
     float testFreqs[] = {1.0, 5.0, 10.0, 50.0, 100.0, 200.0, 500.0};
@@ -87,7 +88,7 @@ void testLowSpeedPrecision(HighFrequencyStepper& controller, uint8_t index) {
     int passedLowSpeeds = 0;
     for (int i = 0; i < numFreqs; i++) {
         float freq = testFreqs[i];
-        Serial.print("Testing low speed: "); Serial.print(freq, 1); Serial.println(" Hz");
+        Serial.printf("Testing low speed: %.1f Hz\n", freq);
         
         uint32_t freqHz = (uint32_t)freq;
         int32_t startPos = controller.getPosition(index);
@@ -98,15 +99,15 @@ void testLowSpeedPrecision(HighFrequencyStepper& controller, uint8_t index) {
 
         int32_t endPos = controller.getPosition(index);
         int32_t stepsCounted = endPos - startPos;
-        uint32_t expectedSteps = freqHz * 5; // 5 seconds
+        int32_t expectedSteps = freqHz * 5; // 5 seconds
+        int32_t error = abs(expectedSteps - stepsCounted);
+        bool testPassed = (error <= toleranceSteps); // Allowable error within one encoder count
         float accuracy = (float)stepsCounted / expectedSteps * 100.0;
-        bool testPassed = (accuracy >= 95.0); // Higher accuracy expected for low speeds
-        
-        Serial.print("  Expected: "); Serial.print(expectedSteps);
-        Serial.print(" steps, Counted: "); Serial.println(stepsCounted);
-        Serial.print("  Accuracy: "); Serial.print(accuracy, 1); Serial.println("%");
-        Serial.print("  Mode: "); Serial.println(controller.isInLEDCMode(index) ? "LEDC" : "Timer");
-        
+
+        Serial.printf("  Expected:  %d steps, Counted: %d steps\n", expectedSteps, stepsCounted);
+        Serial.printf("  Error: %d steps with tolerance: %d steps\n", error, toleranceSteps);
+        Serial.printf("  Mode: %s\n", controller.isInLEDCMode(index) ? "LEDC" : "Timer");
+
         String freqName = "Low speed " + String(freq, 1) + "Hz";
         addTestResult(freqName, testPassed, 
                       "Expected: " + String(expectedSteps) + ", Got: " + String(stepsCounted), 

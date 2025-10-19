@@ -15,6 +15,7 @@ struct StepperConfig {
     uint8_t stepPin;
     uint8_t dirPin;
     uint8_t enablePin;
+    bool stepperEnabledHigh; // true if enable pin is active HIGH
     uint8_t encoderAPin;    // Pin for pulse counting (can be same as stepPin)
     uint8_t encoderBPin;    // Pin for pulse counting (can be same as stepPin)
     uint8_t encoderAttachMode; // Mode for attaching encoder (1 - Single edge, 2- HalfQuad, 4 - FullQuad)
@@ -44,6 +45,7 @@ struct StepperConfig {
         stepPin = 0;
         dirPin = 0;
         enablePin = 0;
+        stepperEnabledHigh = false;
         encoderAPin = 0;
         encoderBPin = 0;
         encoderAttachMode = 1; // Default to Single edge

@@ -54,9 +54,10 @@ void testMaxSpeed(HighFrequencyStepper& controller) {
                 delay(200); // Brief pause between speeds
 
             }
+            controller.accelerateToFrequency(i, 0, dir, true); // Gently stop the stepper
             delay(1000);
         }
-        controller.stop(i);
+        controller.stop(i); // Stop the stepper
         Serial.printf("Finished testing Stepper %d.\n", i);
         controller.disableStepper(i);
     }

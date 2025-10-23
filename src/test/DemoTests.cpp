@@ -14,7 +14,7 @@ void demonstratePositionTracking(HighFrequencyStepper& controller, uint8_t index
     bool dir = true;
 
     int32_t startPos = controller.getPosition(index);
-    controller.startContinuous(index, 1000, dir);
+    controller.moveAtFrequency(index, 1000, dir);
     delay(1000); // Exactly 1000 steps
     controller.stop(index);
 
@@ -26,7 +26,7 @@ void demonstratePositionTracking(HighFrequencyStepper& controller, uint8_t index
     dir = false;
 
     startPos = controller.getPosition(index);
-    controller.startContinuous(index, 2000, dir);
+    controller.moveAtFrequency(index, 2000, dir);
     delay(250); // 500 steps
     controller.stop(index);
 
@@ -36,7 +36,7 @@ void demonstratePositionTracking(HighFrequencyStepper& controller, uint8_t index
     // Demo 3: Position tracking during operation
     Serial.println("\n3. Real-time position tracking (10 seconds)");
     dir = true;
-    controller.startContinuous(index, 1500, dir);
+    controller.moveAtFrequency(index, 1500, dir);
     
     unsigned long startTime = millis();
     while (millis() - startTime < 10000) {
@@ -95,7 +95,7 @@ void demonstrateClosedLoopControl(HighFrequencyStepper& controller, uint8_t inde
             uint32_t speed = min(abs(error) * 10, 5000); // Proportional control
             speed = max(speed, (uint32_t)100); // Minimum speed
 
-            controller.startContinuous(index, speed, dir);
+            controller.moveAtFrequency(index, speed, dir);
             delay(50); // Short move
             controller.stop(index);
 
@@ -149,7 +149,7 @@ void testAsyncMovement(HighFrequencyStepper& stepper) {
         int maxFreq = stepper.getMaxFrequency(i); // Just to ensure it's configured
         int fullCircle = stepper.getMicrostepsPerRevolution(i);
         printf("Stepper %d max frequency: %d Hz, steps/rev: %d, target 50 circles: %d\n", i, maxFreq, fullCircle, fullCircle * 50);
-        stepper.moveToPositionAsync(i, fullCircle * 50, maxFreq); // Move at max frequency
+        stepper.moveToPosition(i, fullCircle * 50, maxFreq, true); // Move at max frequency
     }
     
     // Monitor progress

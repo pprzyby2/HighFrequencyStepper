@@ -93,7 +93,7 @@ void testLowSpeedPrecision(HighFrequencyStepper& controller, uint8_t index) {
         uint32_t freqHz = (uint32_t)freq;
         int32_t startPos = controller.getPosition(index);
 
-        controller.startContinuous(index, freqHz, dir);
+        controller.moveAtFrequency(index, freqHz, dir);
         delay(5000); // Run for 5 seconds
         controller.stop(index);
 
@@ -144,7 +144,7 @@ void demonstrateSpeedMeasurement(HighFrequencyStepper& controller, uint8_t index
         uint32_t setSpeed = testSpeeds[i];
         Serial.print("Setting speed to: "); Serial.print(setSpeed); Serial.println(" Hz");
         
-        controller.startContinuous(index, setSpeed, i % 2 == 0);
+        controller.moveAtFrequency(index, setSpeed, i % 2 == 0);
         
         delay(1000); // Let it stabilize
         

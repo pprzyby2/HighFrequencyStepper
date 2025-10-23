@@ -73,6 +73,9 @@ bool HighFrequencyStepper::addStepper(uint8_t index, const StepperConfig& config
 
     // Create PWMStepper instance
     pwmSteppers[index] = new PWMStepper(pulseCounters[index], config.encoderToMicrostepRatio, config.stepPin, config.dirPin, config.enablePin, config.ledcChannel);
+    pwmSteppers[index]->setAcceleration(config.acceleration);
+    pwmSteppers[index]->setMaxFreq(config.maxFrequency);
+    pwmSteppers[index]->setStepperEnabledHigh(config.stepperEnabledHigh);
     if (!pwmSteppers[index]) {
         Serial.println("ERROR: Failed to create PWMStepper instance");
         return false;
@@ -292,95 +295,50 @@ bool HighFrequencyStepper::getInvertDirection(uint8_t index) const {
 
 
 // Move to absolute position
-bool HighFrequencyStepper::moveToPosition(uint8_t index, int32_t position, double frequency) {
+bool HighFrequencyStepper::moveToPosition(uint8_t index, int32_t position, double frequency, bool blocking) {
     if (!validateStepperIndex(index)) return false;
-    
-    if (frequency == 0) frequency = configs[index].maxFrequency;
-    
-    int32_t currentPos = getPosition(index);
-    int32_t steps = position - currentPos;
-    
-    return moveRelative(index, steps, frequency);
-}
 
-bool HighFrequencyStepper::moveToPositionAsync(uint8_t index, int32_t position, double maxFrequency) {
-    if (!validateStepperIndex(index)) return false;
-    
-    if (maxFrequency == 0) maxFrequency = configs[index].maxFrequency;
-    
+    if (frequency == 0 || frequency > configs[index].maxFrequency) frequency = configs[index].maxFrequency;
+
     int32_t currentPos = getPosition(index);
     int32_t steps = position - currentPos;
-    if (steps == 0) return true; // Already at position
-    
+    if (steps == 0) return true; // Already at position    
+
     bool direction = steps > 0;
     if (configs[index].invertDirection) {
         direction = !direction;
     }
-    
+
     // Update target position
     status[index].targetPosition = position;
     status[index].isMoving = true;
-    status[index].targetFrequency = maxFrequency;
+    status[index].targetFrequency = frequency;
     
     // Start movement without blocking
     pwmSteppers[index]->setDirection(direction);
-    pwmSteppers[index]->setTargetFrequency(maxFrequency);
-    pwmSteppers[index]->setTargetPosition(position);
     pwmSteppers[index]->setAcceleration(configs[index].acceleration);
-    
-    Serial.print("Stepper ");
-    Serial.print(index);
-    Serial.print(" started async move to position ");
-    Serial.print(position);
-    Serial.print(" at max frequency ");
-    Serial.print(maxFrequency);
-    Serial.println(" Hz");
-    
+    pwmSteppers[index]->moveToPosition(position, frequency);
+
+    int maxTimeMs = (abs(steps) / (frequency)) * 1000 * 10; // Estimated max time with buffer
+    uint32_t startTime = millis();
+    if (blocking) {
+        while (abs(getPosition(index) - position) > configs[index].encoderToMicrostepRatio) {
+            vTaskDelay(1); // Yield to other tasks
+            // Timeout check
+            if (millis() - startTime > maxTimeMs) {
+                Serial.print("ERROR: moveToPosition timeout for stepper ");
+                Serial.println(index);
+                return false;
+            }
+        }
+    }
     return true;
 }
 
+
 // Move relative steps
-bool HighFrequencyStepper::moveRelative(uint8_t index, int32_t steps, double frequency) {
-    if (!validateStepperIndex(index)) return false;
-    if (steps == 0) return true;
-    
-    if (frequency == 0) frequency = configs[index].maxFrequency;
-    if (frequency > configs[index].maxFrequency) frequency = configs[index].maxFrequency;
-    
-    bool direction = steps > 0;
-
-    if (configs[index].invertDirection) {
-        direction = !direction;
-    }
-
-    uint32_t absSteps = abs(steps);
-    
-    // Update target position
-    status[index].targetPosition = getPosition(index) + steps;
-    status[index].isMoving = true;
-    status[index].targetFrequency = frequency;
-    
-    // Execute movement
-    uint32_t currentMicros = micros();
-    double stepDuration = 1000000.0 / frequency;
-    double expectedEndTime = currentMicros + (1.5* absSteps * stepDuration);
-
-    pwmSteppers[index]->setDirection(direction);
-    pwmSteppers[index]->moveAtFrequency(frequency);
-    while (micros() < expectedEndTime) {
-        if (steps > 0 && getPosition(index) >= status[index].targetPosition){
-            break; // Avoid overshooting in forward direction
-        } else if (steps < 0 && getPosition(index) <= status[index].targetPosition) {
-            break; // Avoid overshooting in reverse direction
-        }
-        vTaskDelay(1); // Yield to other tasks
-    }
-    pwmSteppers[index]->stopPWM();
-
-    // Update position tracking
-    updatePosition(index);
-
-    return abs(getPosition(index) - status[index].targetPosition) > 1 ? false : true;
+bool HighFrequencyStepper::moveRelative(uint8_t index, int32_t steps, double frequency, bool blocking) {
+    return moveToPosition(index, getPosition(index) + steps, frequency, blocking);
 }
 
 bool HighFrequencyStepper::accelerateToFrequency(uint8_t index, double frequency, bool direction, bool waitForCompletion) { 
@@ -408,7 +366,7 @@ bool HighFrequencyStepper::accelerateToFrequency(uint8_t index, double frequency
 }
 
 // Start continuous movement
-bool HighFrequencyStepper::startContinuous(uint8_t index, double frequency, bool direction) {
+bool HighFrequencyStepper::moveAtFrequency(uint8_t index, double frequency, bool direction) {
     if (!validateStepperIndex(index)) return false;
     
     if (frequency > configs[index].maxFrequency) frequency = configs[index].maxFrequency;
@@ -691,18 +649,16 @@ bool HighFrequencyStepper::selfTest(uint8_t index) {
     
     // Test 3: Small movement test
     int32_t startPos = getPosition(index);
-    moveRelative(index, 100, 1000); // Move 100 steps at 1kHz
-    delay(200);
+    moveToPosition(index, startPos + 100, configs[index].maxFrequency, true); // Move 100 steps at max frequency
     int32_t endPos = getPosition(index);
-    
-    if (abs(endPos - startPos - 100) > 5) { // Allow 5 step tolerance
+
+    if (abs(endPos - startPos - 100) > configs[index].encoderToMicrostepRatio) { // Allow configurable step tolerance
         Serial.printf("FAIL: Movement accuracy (Expected: %d, Actual: %d)\n", startPos + 100, endPos);
         return false;
     }
     
     // Return to start position
-    moveToPosition(index, startPos, 1000);
-    delay(200);
+    moveToPosition(index, startPos, 1000, true);
     
     Serial.println("PASS: Self-test completed successfully");
     return true;

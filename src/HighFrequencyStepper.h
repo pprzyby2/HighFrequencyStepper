@@ -56,7 +56,7 @@ struct StepperConfig {
         rmsCurrent = 800;
         stepsPerRev = 200;
         maxFrequency = 100000.0;
-        acceleration = 1000.0;
+        acceleration = 10000.0;
         invertDirection = false;
         ledcChannel = 0;
     }
@@ -141,11 +141,10 @@ public:
     bool getInvertDirection(uint8_t index) const;
     
     // Movement methods
-    bool moveToPosition(uint8_t index, int32_t position, double frequency = 0);
-    bool moveRelative(uint8_t index, int32_t steps, double frequency = 0);
-    bool moveToPositionAsync(uint8_t index, int32_t position, double maxFrequency = 0);
+    bool moveToPosition(uint8_t index, int32_t position, double frequency = 0, bool blocking = true);
+    bool moveRelative(uint8_t index, int32_t steps, double frequency = 0, bool blocking = true);
     bool accelerateToFrequency(uint8_t index, double frequency, bool direction, bool waitForCompletion = false);
-    bool startContinuous(uint8_t index, double frequency, bool direction = true);
+    bool moveAtFrequency(uint8_t index, double frequency, bool direction = true);
     bool stop(uint8_t index);
     bool stopAll();
     bool emergencyStop();

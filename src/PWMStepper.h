@@ -32,12 +32,12 @@ private:
 
     bool stepperEnabledHigh; // true if enable pin is active HIGH
     bool direction;  // true = forward, false = reverse
-    double currentFreq;
-    double acceleration;
-    int64_t maxFreq;
-    double targetFreq;
-    int64_t targetPosition;
-    int updateNumber = 0;
+    volatile double currentFreq = 0;
+    volatile double acceleration;
+    volatile double maxFreq;
+    volatile double targetFreq;
+    volatile int64_t targetPosition;
+    volatile int updateNumber = 0;
     static const size_t MAX_POSITION_HISTORY = 100; // Max history size
     std::vector<int64_t> positionHistory; // For tracking position over time
     std::vector<uint64_t> updateTimes; // Timestamps of updates
@@ -81,6 +81,7 @@ public:
     // Start PWM at specified frequency (steps per second)
     void accelerateToFrequency(double frequency);
     void moveAtFrequency(double frequency);
+    void moveToPosition(int64_t position, double frequency);
     
     // Stop PWM
     void stopPWM();

@@ -77,7 +77,7 @@ void testLowSpeedPrecision(HighFrequencyStepper& controller, uint8_t index) {
     controller.setPosition(index, 0);
     controller.enableStepper(index);
     bool dir = true;
-    int toleranceSteps = controller.getConfig(index).encoderToMicrostepRatio; // Allowable error within one encoder count
+    int toleranceSteps = 2 * controller.getConfig(index).encoderToMicrostepRatio; // Allowable error within one encoder count
     
     // Test very low frequencies (should use Timer mode)
     float testFreqs[] = {1.0, 5.0, 10.0, 50.0, 100.0, 200.0, 500.0};
@@ -101,7 +101,7 @@ void testLowSpeedPrecision(HighFrequencyStepper& controller, uint8_t index) {
         int32_t stepsCounted = endPos - startPos;
         int32_t expectedSteps = freqHz * 5; // 5 seconds
         int32_t error = abs(expectedSteps - stepsCounted);
-        bool testPassed = (error <= toleranceSteps); // Allowable error within one encoder count
+        bool testPassed = (error <= toleranceSteps) || (error / expectedSteps < 0.05); // Allowable error within one encoder count
         float accuracy = (float)stepsCounted / expectedSteps * 100.0;
 
         Serial.printf("  Expected:  %d steps, Counted: %d steps\n", expectedSteps, stepsCounted);

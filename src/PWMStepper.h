@@ -27,23 +27,26 @@ private:
     uint32_t ledcFrequency;
     uint8_t ledcResolution;
 
-    StepperState state;
-    StepperMode mode;
+    StepperState state = STEPPER_OFF;
+    StepperMode mode = MODE_LEDC;
 
     bool stepperEnabledHigh; // true if enable pin is active HIGH
     bool direction;  // true = forward, false = reverse
+    bool invertDirection = false; // true = invert direction logic
     volatile double currentFreq = 0;
     volatile double acceleration;
     volatile double maxFreq;
     volatile double targetFreq;
     volatile int64_t targetPosition;
     volatile int updateNumber = 0;
+    volatile bool decelerating = false;
+    volatile double decelerationDistance = 0;
     static const size_t MAX_POSITION_HISTORY = 100; // Max history size
     std::vector<int64_t> positionHistory; // For tracking position over time
     std::vector<uint64_t> updateTimes; // Timestamps of updates
 
     ESP32Encoder* encoder;
-    int encoderScale = 1; // Scale factor for encoder counts to steps
+    float encoderScale = 1.0; // Scale factor for encoder counts to steps
     
     // Dual mode operation
     static const double FREQUENCY_THRESHOLD; // 512 Hz threshold
@@ -63,7 +66,7 @@ private:
     
 public:
     // Constructor
-    PWMStepper(ESP32Encoder* encoder, int encoderScale, uint8_t stepPin, uint8_t dirPin, uint8_t enablePin, uint8_t ledcChannel = 0);
+    PWMStepper(ESP32Encoder* encoder, float encoderScale, uint8_t stepPin, uint8_t dirPin, uint8_t enablePin, uint8_t ledcChannel = 0);
     
     // Destructor for proper cleanup
     ~PWMStepper();
@@ -93,12 +96,17 @@ public:
     void setTargetPosition(int64_t position);
     void setMaxFreq(int64_t maxFrequency) { maxFreq = maxFrequency; }   
     void setStepperEnabledHigh(bool enabled) { stepperEnabledHigh = enabled; }
+    void setInvertDirection(bool invert) { invertDirection = invert; }
     
     // Get current status
     bool isEnabled() const;
     bool getDirection() const;
     double getFrequency() const;
     StepperMode getMode() const;
+    int64_t getPosition() const {
+        return (int) encoder->getCount() * encoderScale;
+    }
+    void printStatus() const;
     
     // Utility functions
     void step(uint32_t steps, double frequency, bool dir);

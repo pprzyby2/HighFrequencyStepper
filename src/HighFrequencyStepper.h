@@ -19,7 +19,7 @@ struct StepperConfig {
     uint8_t encoderAPin;    // Pin for pulse counting (can be same as stepPin)
     uint8_t encoderBPin;    // Pin for pulse counting (can be same as stepPin)
     uint8_t encoderAttachMode; // Mode for attaching encoder (1 - Single edge, 2- HalfQuad, 4 - FullQuad)
-    uint32_t encoderToMicrostepRatio; // Ratio of encoder counts to microsteps
+    float encoderToMicrostepRatio; // Ratio of encoder counts to microsteps
     HardwareSerial* uart;    // Pointer to HardwareSerial instance for TMC communication
     
     // TMC2209 configuration

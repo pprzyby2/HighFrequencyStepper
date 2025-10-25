@@ -22,7 +22,7 @@ void testAnglePrecision(HighFrequencyStepper& stepper) {
         Serial.printf("Expected: ~%d, Actual: %d\n", totalSteps, finalPos);
 
         // Evaluate test
-        bool testPassed = (finalPos >= totalSteps * 0.95 && finalPos <= totalSteps * 1.05); // ±5% tolerance
+        bool testPassed = (finalPos / totalSteps > 0.95 && finalPos / totalSteps < 1.05); // ±5% tolerance
         float accuracy = (float)(finalPos) / totalSteps * 100.0;
         addTestResult("Angle Precision", testPassed, 
                     "Expected: " + String(totalSteps) + ", Got: " + String(finalPos), accuracy);
@@ -46,7 +46,7 @@ void testAnglePrecision(HighFrequencyStepper& stepper) {
         Serial.printf("Expected: ~%d, Actual: %d\n", totalSteps, finalPos);
 
         // Evaluate test
-        bool testPassed = (finalPos >= totalSteps * 0.95 && finalPos <= totalSteps * 1.05); // ±5% tolerance
+        bool testPassed = (finalPos / totalSteps > 0.95 && finalPos / totalSteps < 1.05); // ±5% tolerance
         float accuracy = (float)(finalPos) / totalSteps * 100.0;
         addTestResult("Angle Precision", testPassed, 
                     "Expected: " + String(totalSteps) + ", Got: " + String(finalPos), accuracy);

@@ -118,7 +118,7 @@ void setup() {
     configN23.acceleration = 10000.0;          // Different acceleration
     configN23.ledcChannel = 1;        // Different LEDC channel
 
-    StepperConfig configN23_2;
+    /* StepperConfig configN23_2;
     configN23_2.stepPin = N23_2_STEP_PIN;           // Different step pin
     configN23_2.dirPin = N23_2_DIR_PIN;             // Different direction pin
     configN23_2.enablePin = N23_2_EN_PIN;         // Can share enable pin
@@ -133,6 +133,23 @@ void setup() {
     configN23_2.stepsPerRev = 200;
     configN23_2.maxFrequency = (360 / 60) * 32 * 200;  // 360 RPM max frequency
     configN23_2.acceleration = 10000.0;          // Different acceleration
+    configN23_2.ledcChannel = 2;        // Different LEDC channel */
+
+    StepperConfig configN23_2;
+    configN23_2.stepPin = N23_2_STEP_PIN;           // Different step pin
+    configN23_2.dirPin = N23_2_DIR_PIN;             // Different direction pin
+    configN23_2.enablePin = N23_2_EN_PIN;         // Can share enable pin
+    configN23_2.stepperEnabledHigh = true;       // Active HIGH
+    configN23_2.encoderAPin = N23_2_CNT_A_PIN;       // Different pulse counter pin
+    configN23_2.encoderBPin = N23_2_CNT_B_PIN;       // Different pulse counter pin
+    configN23_2.encoderAttachMode = 4;           // Default to Full Quad
+    configN23_2.encoderToMicrostepRatio = (200.0 * 32.0) / 4000.0;     // 4000 counts per revolution, 200 steps per revolution, 32 microsteps
+    configN23_2.invertDirection = true;           // Reverse counting
+    configN23_2.uart = NULL;                   // The same UART for TMC
+    configN23_2.microsteps = 32;        // Different microsteps
+    configN23_2.stepsPerRev = 200;
+    configN23_2.maxFrequency = (2000 / 60) * 32 * 200;  // 2000 RPM max frequency
+    configN23_2.acceleration = 10000.0;          // Different acceleration
     configN23_2.ledcChannel = 2;        // Different LEDC channel
 
     
@@ -142,12 +159,12 @@ void setup() {
     //     return;
     // }
 
-    if (!stepperController.addStepper(0, configN23)) {
-        Serial.println("Failed to add stepper 1");
-        return;
-    }
+    // if (!stepperController.addStepper(0, configN23)) {
+    //     Serial.println("Failed to add stepper 1");
+    //     return;
+    // }
 
-    if (!stepperController.addStepper(1, configN23_2)) {
+    if (!stepperController.addStepper(0, configN23_2)) {
         Serial.println("Failed to add stepper 2");
         return;
     }

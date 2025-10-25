@@ -73,9 +73,6 @@ bool HighFrequencyStepper::addStepper(uint8_t index, const StepperConfig& config
 
     // Create PWMStepper instance
     pwmSteppers[index] = new PWMStepper(pulseCounters[index], config.encoderToMicrostepRatio, config.stepPin, config.dirPin, config.enablePin, config.ledcChannel);
-    pwmSteppers[index]->setAcceleration(config.acceleration);
-    pwmSteppers[index]->setMaxFreq(config.maxFrequency);
-    pwmSteppers[index]->setStepperEnabledHigh(config.stepperEnabledHigh);
     if (!pwmSteppers[index]) {
         Serial.println("ERROR: Failed to create PWMStepper instance");
         return false;
@@ -95,11 +92,9 @@ bool HighFrequencyStepper::addStepper(uint8_t index, const StepperConfig& config
     if (index >= stepperCount) {
         stepperCount = index + 1;
     }
-    
-    Serial.print("Added stepper ");
-    Serial.print(index);
-    Serial.println(" successfully");
-    
+
+    Serial.printf("Added stepper %d successfully\n", index);
+
     return true;
 }
 
@@ -109,15 +104,19 @@ bool HighFrequencyStepper::initializeStepper(uint8_t index) {
         Serial.println("ERROR: Invalid stepper index for initialization");
         return false;
     }
+
+    // Initialize PulseCounter
+    pulseCounters[index]->setCount(0);
     
     // Initialize PWMStepper
     pwmSteppers[index]->setMaxFreq(configs[index].maxFrequency);
+    pwmSteppers[index]->setAcceleration(configs[index].acceleration);
+    pwmSteppers[index]->setInvertDirection(configs[index].invertDirection);
     pwmSteppers[index]->setStepperEnabledHigh(configs[index].stepperEnabledHigh);
-    pwmSteppers[index]->setAcceleration(configs[index].acceleration);    
+    pwmSteppers[index]->setTargetFrequency(0);
+    pwmSteppers[index]->setTargetPosition(0);
     pwmSteppers[index]->begin();
     
-    // Initialize PulseCounter
-    pulseCounters[index]->setCount(0);
     
     // Initialize TMC2209
     if (tmcDrivers[index]) {
@@ -304,33 +303,38 @@ bool HighFrequencyStepper::moveToPosition(uint8_t index, int32_t position, doubl
     int32_t steps = position - currentPos;
     if (steps == 0) return true; // Already at position    
 
-    bool direction = steps > 0;
-    if (configs[index].invertDirection) {
-        direction = !direction;
-    }
-
     // Update target position
     status[index].targetPosition = position;
     status[index].isMoving = true;
     status[index].targetFrequency = frequency;
     
-    // Start movement without blocking
-    pwmSteppers[index]->setDirection(direction);
-    pwmSteppers[index]->setAcceleration(configs[index].acceleration);
     pwmSteppers[index]->moveToPosition(position, frequency);
 
-    int maxTimeMs = (abs(steps) / (frequency)) * 1000 * 10; // Estimated max time with buffer
+    int maxTimeMs = 10000 + (abs(steps) / (frequency)) * 1000 * 5; // Estimated max time with buffer
     uint32_t startTime = millis();
+    int prevError = abs(getPosition(index) - position);
     if (blocking) {
-        while (abs(getPosition(index) - position) > configs[index].encoderToMicrostepRatio) {
-            vTaskDelay(1); // Yield to other tasks
-            // Timeout check
-            if (millis() - startTime > maxTimeMs) {
-                Serial.print("ERROR: moveToPosition timeout for stepper ");
-                Serial.println(index);
-                return false;
+        int loopCounter = 0;
+        int currentError = prevError;
+        while (currentError > configs[index].encoderToMicrostepRatio) {
+            vTaskDelay(10); // Yield to other tasks
+            currentError = abs(getPosition(index) - position);
+            // Timeout check            
+            if (loopCounter % 10 == 0) {
+                //pwmSteppers[index]->update();
+                //Serial.printf("Stepper %d moving... Current: %d, Target: %d\n", index, getPosition(index), position);
+                pwmSteppers[index]->printStatus();
             }
+            if (loopCounter % 100 == 0) {
+                if (prevError <= currentError && (millis() - startTime) > maxTimeMs) {
+                    Serial.printf("ERROR: moveToPosition timeout for stepper %d\n", index);
+                    return false;
+                }
+                prevError = currentError;
+            }
+            loopCounter++;
         }
+        status[index].isMoving = false;
     }
     return true;
 }
@@ -357,8 +361,28 @@ bool HighFrequencyStepper::accelerateToFrequency(uint8_t index, double frequency
     
     if (waitForCompletion) {
         // Wait until target frequency is reached
-        while (abs(pwmSteppers[index]->getFrequency() - frequency) > 1.0) {
-            vTaskDelay(1); // Yield to other tasks
+        int loopCounter = 0;
+        int prevError = abs(pwmSteppers[index]->getFrequency() - frequency);
+        int currentError = prevError;
+        int maxTimeMs = 10000;
+        uint32_t startTime = millis();        
+        while (currentError > configs[index].encoderToMicrostepRatio) {
+            vTaskDelay(10); // Yield to other tasks
+            currentError = abs(pwmSteppers[index]->getFrequency() - frequency);
+            // Timeout check            
+            if (loopCounter % 10 == 0) {
+                //pwmSteppers[index]->update();
+                //Serial.printf("Stepper %d moving... Current: %d, Target: %d\n", index, getPosition(index), position);
+                pwmSteppers[index]->printStatus();
+            }
+            if (loopCounter % 100 == 0) {
+                if (prevError <= currentError && (millis() - startTime) > maxTimeMs) {
+                    Serial.printf("ERROR: accelerateToFrequency timeout for stepper %d\n", index);
+                    return false;
+                }
+                prevError = currentError;
+            }
+            loopCounter++;
         }
     }
     
@@ -433,7 +457,7 @@ int32_t HighFrequencyStepper::getPosition(uint8_t index) {
     if (!validateStepperIndex(index)) return 0;
     
     // Get position from pulse counter
-    int32_t pulseCount = pulseCounters[index]->getCount() * configs[index].encoderToMicrostepRatio;
+    int32_t pulseCount = (int) (pulseCounters[index]->getCount() * configs[index].encoderToMicrostepRatio);
     
     // Update internal position tracking
     status[index].currentPosition = pulseCount;
@@ -557,32 +581,30 @@ void HighFrequencyStepper::printStatus(uint8_t index) {
     
     StepperStatus stat = getStatus(index);
     
-    Serial.println("=== Stepper " + String(index) + " Status ===");
-    Serial.println("Initialized: " + String(stat.isInitialized ? "YES" : "NO"));
-    Serial.println("Enabled: " + String(stat.isEnabled ? "YES" : "NO"));
-    Serial.println("Moving: " + String(stat.isMoving ? "YES" : "NO"));
-    Serial.println("Position: " + String(stat.currentPosition));
-    Serial.println("Target: " + String(stat.targetPosition));
-    Serial.println("Frequency: " + String(stat.currentFrequency) + " Hz");
-    Serial.println("Temperature: " + String(stat.temperature) + "°C");
-    Serial.println("StallGuard: " + String(stat.stallGuard ? "DETECTED" : "OK"));
-    Serial.println("Microsteps: " + String(configs[index].microsteps));
-    Serial.println("RMS Current: " + String(configs[index].rmsCurrent) + " mA");
-    Serial.println("Mode: " + String(pwmSteppers[index]->getMode() == MODE_LEDC ? "LEDC" : "Timer"));
+    Serial.printf("=== Stepper %d Status ===\n", index);
+    Serial.printf("Initialized: %s\n", stat.isInitialized ? "YES" : "NO");
+    Serial.printf("Enabled: %s\n", stat.isEnabled ? "YES" : "NO");
+    Serial.printf("Moving: %s\n", stat.isMoving ? "YES" : "NO");
+    Serial.printf("Position: %d\n", stat.currentPosition);
+    Serial.printf("Target: %d\n", stat.targetPosition);
+    Serial.printf("Frequency: %d Hz\n", stat.currentFrequency);
+    Serial.printf("Temperature: %.2f°C\n", stat.temperature);
+    Serial.printf("StallGuard: %s\n", stat.stallGuard ? "DETECTED" : "OK");
+    Serial.printf("Microsteps: %d\n", configs[index].microsteps);
+    Serial.printf("RMS Current: %d mA\n", configs[index].rmsCurrent);
+    Serial.printf("Mode: %s\n", pwmSteppers[index]->getMode() == MODE_LEDC ? "LEDC" : "Timer");
     Serial.println("==========================");
 }
 
 // Print status for all steppers
 void HighFrequencyStepper::printAllStatus() {
     Serial.println("\n=== HIGH FREQUENCY STEPPER STATUS ===");
-    Serial.println("Stepper Count: " + String(stepperCount));
-    Serial.println("Global Enable: " + String(globalEnable ? "ON" : "OFF"));
-    Serial.println("");
+    Serial.printf("Stepper Count: %d\n", stepperCount);
+    Serial.printf("Global Enable: %s\n", globalEnable ? "ON" : "OFF");
     
     for (uint8_t i = 0; i < stepperCount; i++) {
         if (pwmSteppers[i] != nullptr) {
             printStatus(i);
-            Serial.println("");
         }
     }
 }
@@ -617,11 +639,9 @@ bool HighFrequencyStepper::selfTest(uint8_t index) {
         Serial.println("Self-test failed: Invalid stepper index");
         return false;
     }
-    
-    Serial.print("Self-test for stepper ");
-    Serial.print(index);
-    Serial.println("...");
-    
+
+    Serial.printf("Self-test for stepper %d...\n", index);
+
     // Test 1: Communication with TMC driver
     if (tmcDrivers[index]) {
         int previousMicrosteps = tmcDrivers[index]->microsteps();
@@ -649,16 +669,16 @@ bool HighFrequencyStepper::selfTest(uint8_t index) {
     
     // Test 3: Small movement test
     int32_t startPos = getPosition(index);
-    moveToPosition(index, startPos + 100, configs[index].maxFrequency, true); // Move 100 steps at max frequency
+    moveToPosition(index, startPos + 1000, configs[index].maxFrequency, true); // Move 100 steps at max frequency
     int32_t endPos = getPosition(index);
 
-    if (abs(endPos - startPos - 100) > configs[index].encoderToMicrostepRatio) { // Allow configurable step tolerance
-        Serial.printf("FAIL: Movement accuracy (Expected: %d, Actual: %d)\n", startPos + 100, endPos);
+    if (abs(endPos - startPos - 1000) > configs[index].encoderToMicrostepRatio) { // Allow configurable step tolerance
+        Serial.printf("FAIL: Movement accuracy (Expected: %d, Actual: %d)\n", startPos + 1000, endPos);
         return false;
     }
     
     // Return to start position
-    moveToPosition(index, startPos, 1000, true);
+   moveToPosition(index, startPos, configs[index].maxFrequency, true); // Move back to start position
     
     Serial.println("PASS: Self-test completed successfully");
     return true;
@@ -667,9 +687,7 @@ bool HighFrequencyStepper::selfTest(uint8_t index) {
 // Self test for all steppers
 bool HighFrequencyStepper::selfTestAll() {
     bool allPass = true;
-    
     Serial.println("Starting self-test for all steppers...");
-    
     for (uint8_t i = 0; i < stepperCount; i++) {
         if (pwmSteppers[i] != nullptr) {
             if (!selfTest(i)) {
@@ -677,13 +695,7 @@ bool HighFrequencyStepper::selfTestAll() {
             }
         }
     }
-    
-    if (allPass) {
-        Serial.println("All steppers passed self-test!");
-    } else {
-        Serial.println("Some steppers failed self-test!");
-    }
-    
+    Serial.printf("%s", allPass ? "All steppers passed self-test!" : "Some steppers failed self-test!");
     return allPass;
 }
 

@@ -15,7 +15,7 @@ void testCounterOverflow(HighFrequencyStepper& controller, uint8_t index) {
     Serial.println("Moving close to positive overflow point...");
     
     int targetSteps = 50000;
-    controller.moveToPosition(index, targetSteps, 10000); // Move to 32k steps at 10kHz
+    controller.moveToPosition(index, targetSteps, 10000, true); // Move to 32k steps at 10kHz
     controller.stop(index);
     int32_t postOverflowPos = controller.getPosition(index);
     

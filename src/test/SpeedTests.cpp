@@ -80,7 +80,8 @@ void testLowSpeedPrecision(HighFrequencyStepper& controller, uint8_t index) {
     int toleranceSteps = 2 * controller.getConfig(index).encoderToMicrostepRatio; // Allowable error within one encoder count
     
     // Test very low frequencies (should use Timer mode)
-    float testFreqs[] = {1.0, 5.0, 10.0, 50.0, 100.0, 200.0, 500.0};
+    float testFreqs[] = {2.0, 0.5, 1.0, 5.0, 10.0, 50.0, 100.0, 200.0, 500.0};
+    int testTimes[] = {30, 30, 30, 20, 10, 5, 5, 5, 5}; // seconds for each frequency
     int numFreqs = sizeof(testFreqs) / sizeof(testFreqs[0]);
     
     Serial.println("Testing low speed precision...");
@@ -88,24 +89,31 @@ void testLowSpeedPrecision(HighFrequencyStepper& controller, uint8_t index) {
     int passedLowSpeeds = 0;
     for (int i = 0; i < numFreqs; i++) {
         float freq = testFreqs[i];
-        Serial.printf("Testing low speed: %.1f Hz\n", freq);
+        int testTime = testTimes[i];
+        Serial.printf("Testing low speed: %.1f Hz for %d seconds\n", freq, testTime);
         
-        uint32_t freqHz = (uint32_t)freq;
+        //controller.moveAtFrequency(index, freqHz, dir);
+        controller.accelerateToFrequency(index, freq, dir, true);
+        delay(5000); // Allow time to stabilize encoder reading
+        uint32_t startTime = millis();
         int32_t startPos = controller.getPosition(index);
-
-        controller.moveAtFrequency(index, freqHz, dir);
-        delay(5000); // Run for 5 seconds
+        for (int t = 0; t < testTime; t++) {
+            delay(1000);
+            Serial.printf("  Time: %d ms, Current frequency: %.2f Hz\n", (millis() - startTime), (controller.getPosition(index) - startPos) * 1000.0 / (1 + millis() - startTime));
+            //controller.printStatus(index);
+        }
+        int32_t endPos = controller.getPosition(index);
+        uint32_t endTime = millis();
         controller.stop(index);
 
-        int32_t endPos = controller.getPosition(index);
-        int32_t stepsCounted = endPos - startPos;
-        int32_t expectedSteps = freqHz * 5; // 5 seconds
+        int32_t stepsCounted = abs(endPos - startPos);
+        float expectedSteps = freq * (endTime - startTime) / 1000.0; // Expected steps for the test duration
         int32_t error = abs(expectedSteps - stepsCounted);
         bool testPassed = (error <= toleranceSteps) || (error / expectedSteps < 0.05); // Allowable error within one encoder count
         float accuracy = (float)stepsCounted / expectedSteps * 100.0;
 
-        Serial.printf("  Expected:  %d steps, Counted: %d steps\n", expectedSteps, stepsCounted);
-        Serial.printf("  Error: %d steps with tolerance: %d steps\n", error, toleranceSteps);
+        Serial.printf("  Expected:  %.2f steps, Counted: %d steps\n", expectedSteps, stepsCounted);
+        Serial.printf("  Error: %d steps with tolerance: %d steps\n", error, max(toleranceSteps, (int)(expectedSteps * 0.05)));
         Serial.printf("  Mode: %s\n", controller.isInLEDCMode(index) ? "LEDC" : "Timer");
 
         String freqName = "Low speed " + String(freq, 1) + "Hz";

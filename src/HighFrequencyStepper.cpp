@@ -316,7 +316,7 @@ bool HighFrequencyStepper::moveToPosition(uint8_t index, int32_t position, doubl
     if (blocking) {
         int loopCounter = 0;
         int currentError = prevError;
-        while (currentError > configs[index].encoderToMicrostepRatio) {
+        while (currentError > configs[index].encoderToMicrostepRatio && pwmSteppers[index]->isMovingToPosition()) {
             vTaskDelay(10); // Yield to other tasks
             currentError = abs(getPosition(index) - position);
             // Timeout check            
@@ -578,22 +578,23 @@ void HighFrequencyStepper::printStatus(uint8_t index) {
         Serial.println("Invalid stepper index");
         return;
     }
+
+    pwmSteppers[index]->printStatus();
+    // StepperStatus stat = getStatus(index);
     
-    StepperStatus stat = getStatus(index);
-    
-    Serial.printf("=== Stepper %d Status ===\n", index);
-    Serial.printf("Initialized: %s\n", stat.isInitialized ? "YES" : "NO");
-    Serial.printf("Enabled: %s\n", stat.isEnabled ? "YES" : "NO");
-    Serial.printf("Moving: %s\n", stat.isMoving ? "YES" : "NO");
-    Serial.printf("Position: %d\n", stat.currentPosition);
-    Serial.printf("Target: %d\n", stat.targetPosition);
-    Serial.printf("Frequency: %d Hz\n", stat.currentFrequency);
-    Serial.printf("Temperature: %.2f°C\n", stat.temperature);
-    Serial.printf("StallGuard: %s\n", stat.stallGuard ? "DETECTED" : "OK");
-    Serial.printf("Microsteps: %d\n", configs[index].microsteps);
-    Serial.printf("RMS Current: %d mA\n", configs[index].rmsCurrent);
-    Serial.printf("Mode: %s\n", pwmSteppers[index]->getMode() == MODE_LEDC ? "LEDC" : "Timer");
-    Serial.println("==========================");
+    // Serial.printf("=== Stepper %d Status ===\n", index);
+    // Serial.printf("Initialized: %s\n", stat.isInitialized ? "YES" : "NO");
+    // Serial.printf("Enabled: %s\n", stat.isEnabled ? "YES" : "NO");
+    // Serial.printf("Moving: %s\n", stat.isMoving ? "YES" : "NO");
+    // Serial.printf("Position: %d\n", stat.currentPosition);
+    // Serial.printf("Target: %d\n", stat.targetPosition);
+    // Serial.printf("Frequency: %d Hz\n", stat.currentFrequency);
+    // Serial.printf("Temperature: %.2f°C\n", stat.temperature);
+    // Serial.printf("StallGuard: %s\n", stat.stallGuard ? "DETECTED" : "OK");
+    // Serial.printf("Microsteps: %d\n", configs[index].microsteps);
+    // Serial.printf("RMS Current: %d mA\n", configs[index].rmsCurrent);
+    // Serial.printf("Mode: %s\n", pwmSteppers[index]->getMode() == MODE_LEDC ? "LEDC" : "Timer");
+    // Serial.println("==========================");
 }
 
 // Print status for all steppers

@@ -267,6 +267,10 @@ void PWMStepper::moveToPosition(int64_t position, double frequency) {
     state = STEPPER_MOVE_TO_POSITION;
 }
 
+bool PWMStepper::isMovingToPosition() const {
+    return state == STEPPER_MOVE_TO_POSITION;
+}
+
 // Start PWM at specified frequency (steps per second) - Dual Mode
 void PWMStepper::startPWM(double frequency) {
     onSpeedChange(frequency, direction);

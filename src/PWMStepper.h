@@ -85,6 +85,7 @@ public:
     void accelerateToFrequency(double frequency);
     void moveAtFrequency(double frequency);
     void moveToPosition(int64_t position, double frequency);
+    bool isMovingToPosition() const;
     
     // Stop PWM
     void stopPWM();

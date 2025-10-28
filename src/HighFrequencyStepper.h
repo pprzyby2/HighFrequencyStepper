@@ -19,6 +19,7 @@ struct StepperConfig {
     uint8_t encoderAPin;    // Pin for pulse counting (can be same as stepPin)
     uint8_t encoderBPin;    // Pin for pulse counting (can be same as stepPin)
     uint8_t encoderAttachMode; // Mode for attaching encoder (1 - Single edge, 2- HalfQuad, 4 - FullQuad)
+    uint32_t encoderResolution; // Resolution of the encoder (counts per revolution)
     float encoderToMicrostepRatio; // Ratio of encoder counts to microsteps
     HardwareSerial* uart;    // Pointer to HardwareSerial instance for TMC communication
     
@@ -32,12 +33,13 @@ struct StepperConfig {
     uint16_t stepsPerRev;    // Steps per revolution (typically 200 for 1.8° motors)
     
     // PWM/Movement parameters
-    double maxFrequency;     // Maximum frequency in Hz
+    double maxRPM;     // Maximum frequency in Hz
     double acceleration;     // Acceleration in steps/s²
     bool invertDirection;    // Invert direction pin logic
     
     // LEDC configuration
     uint8_t ledcChannel;     // LEDC channel (0-15)
+    String name;               // Name identifier for the stepper
     
 
     // Default constructor
@@ -50,15 +52,17 @@ struct StepperConfig {
         encoderBPin = 0;
         encoderAttachMode = 1; // Default to Single edge
         encoderToMicrostepRatio = 1; // Default 1:1
+        encoderResolution = 1000; // Default 1000 CPR
         driverAddress = 0;
         rSense = 0.11f;
         microsteps = 16;
         rmsCurrent = 800;
         stepsPerRev = 200;
-        maxFrequency = 100000.0;
+        maxRPM = 500.0;
         acceleration = 10000.0;
         invertDirection = false;
         ledcChannel = 0;
+        name = "Stepper_unknown";
     }
 };
 
@@ -124,8 +128,10 @@ public:
     // Configuration methods
     bool setMicrosteps(uint8_t index, uint16_t microsteps);
     bool setRMSCurrent(uint8_t index, uint16_t currentMA);
-    bool setMaxFrequency(uint8_t index, double frequency);
+    bool setMaxRPM(uint8_t index, double rpm);
     bool setAcceleration(uint8_t index, double acceleration);
+    bool setName(uint8_t index, const String& name);
+    String getName(uint8_t index) const;
     uint8_t getStepPin(uint8_t index) const;
     uint8_t getDirPin(uint8_t index) const;
     uint8_t getEnablePin(uint8_t index) const;
@@ -137,6 +143,7 @@ public:
     uint16_t getRMSCurrent(uint8_t index) const;
     uint16_t getMicrostepsPerRevolution(uint8_t index) const;
     double getMaxFrequency(uint8_t index) const;
+    double getMaxRPM(uint8_t index) const;
     double getAcceleration(uint8_t index) const;
     bool getInvertDirection(uint8_t index) const;
     

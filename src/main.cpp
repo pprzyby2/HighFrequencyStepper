@@ -91,14 +91,17 @@ void setup() {
     configTMC2209.invertDirection = true; // Reverse counting
     configTMC2209.encoderAPin = STEP_CNT_PIN;      // Pulse counter pin
     configTMC2209.encoderBPin = DIR_PIN;      // Pulse counter pin
+    configTMC2209.encoderAttachMode = 1;       // Default to Full Quad
+    configTMC2209.encoderResolution = 200 * 256;    // Not really encoder. Just connect output STEP pin to input CNT and count steps (200 steps/rev * 256 microsteps)
     configTMC2209.uart = &Serial2;             // UART for TMC
     configTMC2209.driverAddress = 0b00;   // TMC2209 address
     configTMC2209.rSense = 0.11f;         // Current sense resistor
     configTMC2209.microsteps = 256;        // 256 microsteps
     configTMC2209.rmsCurrent = 800;       // 800mA RMS current
     configTMC2209.stepsPerRev = 200;      // 200 steps per revolution
-    configTMC2209.maxFrequency = (300 / 60) * 256 * 200;  // 300 RPM max frequency
+    configTMC2209.maxRPM = 360;  // 360 RPM max frequency
     configTMC2209.ledcChannel = 0;        // LEDC channel 0
+    configTMC2209.name = "TMC2209";
 
     // Configuration for Stepper 1 (example second stepper)
     StepperConfig configN23;
@@ -109,14 +112,16 @@ void setup() {
     configN23.encoderAPin = N23_CNT_A_PIN;       // Different pulse counter pin
     configN23.encoderBPin = N23_CNT_B_PIN;       // Different pulse counter pin
     configN23.encoderAttachMode = 4;           // Default to Full Quad
-    configN23.encoderToMicrostepRatio = 8;     // 8:1 ratio for N23
+    configN23.encoderResolution = 200;         // Default 200 CPR
+    //configN23.encoderToMicrostepRatio = 8;     // 8:1 ratio for N23
     configN23.invertDirection = false;           // Reverse counting
     configN23.uart = NULL;                   // The same UART for TMC
     configN23.microsteps = 32;        // Different microsteps
     configN23.stepsPerRev = 200;
-    configN23.maxFrequency = (360 / 60) * 32 * 200;  // 360 RPM max frequency
+    configN23.maxRPM = 360;  // 360 RPM max frequency
     configN23.acceleration = 10000.0;          // Different acceleration
     configN23.ledcChannel = 1;        // Different LEDC channel
+    configN23.name = "N23_stepper";
 
     /* StepperConfig configN23_2;
     configN23_2.stepPin = N23_2_STEP_PIN;           // Different step pin
@@ -127,13 +132,15 @@ void setup() {
     configN23_2.encoderBPin = N23_2_CNT_B_PIN;       // Different pulse counter pin
     configN23_2.encoderAttachMode = 4;           // Default to Full Quad
     configN23_2.encoderToMicrostepRatio = 8;     // 8:1 ratio for N23
+    configN23_2.encoderResolution = 200;    // 200 counts per revolution
     configN23_2.invertDirection = false;           // Reverse counting
     configN23_2.uart = NULL;                   // The same UART for TMC
     configN23_2.microsteps = 32;        // Different microsteps
     configN23_2.stepsPerRev = 200;
-    configN23_2.maxFrequency = (360 / 60) * 32 * 200;  // 360 RPM max frequency
+    configN23_2.maxRPM = 360;  // 360 RPM max frequency
     configN23_2.acceleration = 10000.0;          // Different acceleration
-    configN23_2.ledcChannel = 2;        // Different LEDC channel */
+    configN23_2.ledcChannel = 2;        // Different LEDC channel
+    configN23_2.name = "N23_2_stepper";*/
 
     StepperConfig configN23_2;
     configN23_2.stepPin = N23_2_STEP_PIN;           // Different step pin
@@ -143,28 +150,29 @@ void setup() {
     configN23_2.encoderAPin = N23_2_CNT_A_PIN;       // Different pulse counter pin
     configN23_2.encoderBPin = N23_2_CNT_B_PIN;       // Different pulse counter pin
     configN23_2.encoderAttachMode = 4;           // Default to Full Quad
-    configN23_2.encoderToMicrostepRatio = (200.0 * 32.0) / 4000.0;     // 4000 counts per revolution, 200 steps per revolution, 32 microsteps
+    configN23_2.encoderResolution = 1000;         // Default 1000 CPR
+    //configN23_2.encoderToMicrostepRatio = (200.0 * 32.0) / 4000.0;     // 4000 counts per revolution, 200 steps per revolution, 32 microsteps
     configN23_2.invertDirection = true;           // Reverse counting
     configN23_2.uart = NULL;                   // The same UART for TMC
     configN23_2.microsteps = 32;        // Different microsteps
     configN23_2.stepsPerRev = 200;
-    configN23_2.maxFrequency = (2000 / 60) * 32 * 200;  // 2000 RPM max frequency
+    configN23_2.maxRPM = 2000;  // 2000 RPM max frequency
     configN23_2.acceleration = 10000.0;          // Different acceleration
     configN23_2.ledcChannel = 2;        // Different LEDC channel
+    configN23_2.name = "NEMA17+Encoder";
 
-    
     // Add steppers to controller
     // if (!stepperController.addStepper(TMC2209, configTMC2209)) {
     //     Serial.println("Failed to add stepper 0");
     //     return;
     // }
 
-    // if (!stepperController.addStepper(0, configN23)) {
-    //     Serial.println("Failed to add stepper 1");
-    //     return;
-    // }
+    if (!stepperController.addStepper(0, configN23)) {
+        Serial.println("Failed to add stepper 1");
+        return;
+    }
 
-    if (!stepperController.addStepper(0, configN23_2)) {
+    if (!stepperController.addStepper(1, configN23_2)) {
         Serial.println("Failed to add stepper 2");
         return;
     }
@@ -323,13 +331,10 @@ void processSerialInput() {
                 break;
                 
             case RESET_POSITION:
-                stepperController.setPosition(TMC2209, 0);
-                stepperController.setPosition(N23, 0);
-                Serial.println("Position counters reset to 0");
-                Serial.print("Primary stepper position: ");
-                Serial.println(stepperController.getPosition(TMC2209));
-                Serial.print("N23 stepper position: ");
-                Serial.println(stepperController.getPosition(N23));
+                for (int i = 0; i < stepperController.getStepperCount(); i++) {
+                    stepperController.setPosition(i, 0);
+                    Serial.printf("Position of stepper %s reset to %d\n", stepperController.getName(i).c_str(), stepperController.getPosition(i));
+                }
                 break;
 
             case TEST_ANGLE_PRECISION:
@@ -366,10 +371,9 @@ void loop() {
     static unsigned long lastStatusUpdate = 0;
     if (millis() - lastStatusUpdate > 30000) { // Every 30 seconds
         Serial.println("\n--- Periodic Status Update ---");
-        Serial.print("Primary position: ");
-        Serial.println(stepperController.getPosition(TMC2209));
-        Serial.print("N23 position: ");
-        Serial.println(stepperController.getPosition(N23));
+        for (int i = 0; i < stepperController.getStepperCount(); i++) {
+            Serial.printf("Stepper %s position: %d\n", stepperController.getName(i).c_str(), stepperController.getPosition(i));
+        }
         lastStatusUpdate = millis();
     }
     

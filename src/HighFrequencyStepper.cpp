@@ -70,9 +70,10 @@ bool HighFrequencyStepper::addStepper(uint8_t index, const StepperConfig& config
         pwmSteppers[index] = nullptr;
         return false;
     }
+    configs[index].encoderToMicrostepRatio = float(config.stepsPerRev * config.microsteps) / float(config.encoderResolution * config.encoderAttachMode);
 
     // Create PWMStepper instance
-    pwmSteppers[index] = new PWMStepper(pulseCounters[index], config.encoderToMicrostepRatio, config.stepPin, config.dirPin, config.enablePin, config.ledcChannel);
+    pwmSteppers[index] = new PWMStepper(pulseCounters[index], configs[index].encoderToMicrostepRatio, config.stepPin, config.dirPin, config.enablePin, config.ledcChannel);
     if (!pwmSteppers[index]) {
         Serial.println("ERROR: Failed to create PWMStepper instance");
         return false;
@@ -109,7 +110,8 @@ bool HighFrequencyStepper::initializeStepper(uint8_t index) {
     pulseCounters[index]->setCount(0);
     
     // Initialize PWMStepper
-    pwmSteppers[index]->setMaxFreq(configs[index].maxFrequency);
+    double maxFreq = (configs[index].maxRPM / 60.0) * configs[index].microsteps * configs[index].stepsPerRev; // Convert RPM to Hz 
+    pwmSteppers[index]->setMaxFreq(maxFreq);
     pwmSteppers[index]->setAcceleration(configs[index].acceleration);
     pwmSteppers[index]->setInvertDirection(configs[index].invertDirection);
     pwmSteppers[index]->setStepperEnabledHigh(configs[index].stepperEnabledHigh);
@@ -197,18 +199,14 @@ bool HighFrequencyStepper::setRMSCurrent(uint8_t index, uint16_t currentMA) {
     return true;
 }
 
-// Set maximum frequency
-bool HighFrequencyStepper::setMaxFrequency(uint8_t index, double frequency) {
+// Set maximum RPM
+bool HighFrequencyStepper::setMaxRPM(uint8_t index, double rpm) {
     if (!validateStepperIndex(index)) return false;
-    
-    configs[index].maxFrequency = frequency;
-    
-    Serial.print("Stepper ");
-    Serial.print(index);
-    Serial.print(" max frequency set to ");
-    Serial.print(frequency);
-    Serial.println(" Hz");
-    
+
+    configs[index].maxRPM = rpm;
+    pwmSteppers[index]->setMaxFreq(getMaxFrequency(index)); // Convert RPM to Hz
+
+    Serial.printf("Stepper %d max RPM set to %.2f RPM\n", index, rpm);
     return true;
 }
 
@@ -224,6 +222,17 @@ bool HighFrequencyStepper::setAcceleration(uint8_t index, double acceleration) {
     Serial.println(" Hz/s");
     
     return true;
+}
+
+bool HighFrequencyStepper::setName(uint8_t index, const String& name) {
+    if (!validateStepperIndex(index)) return false;
+    configs[index].name = name;
+    return true;
+}
+
+String HighFrequencyStepper::getName(uint8_t index) const {
+    if (!validateStepperIndex(index)) return String("");
+    return configs[index].name;
 }
 
 uint8_t HighFrequencyStepper::getStepPin(uint8_t index) const {
@@ -278,7 +287,12 @@ uint16_t HighFrequencyStepper::getMicrostepsPerRevolution(uint8_t index) const {
 
 double HighFrequencyStepper::getMaxFrequency(uint8_t index) const {
     if (!validateStepperIndex(index)) return 0;
-    return configs[index].maxFrequency;
+    return configs[index].maxRPM * configs[index].microsteps * configs[index].stepsPerRev / 60.0;
+}
+
+double HighFrequencyStepper::getMaxRPM(uint8_t index) const {
+    if (!validateStepperIndex(index)) return 0;
+    return configs[index].maxRPM;
 }
 
 double HighFrequencyStepper::getAcceleration(uint8_t index) const {
@@ -297,7 +311,7 @@ bool HighFrequencyStepper::getInvertDirection(uint8_t index) const {
 bool HighFrequencyStepper::moveToPosition(uint8_t index, int32_t position, double frequency, bool blocking) {
     if (!validateStepperIndex(index)) return false;
 
-    if (frequency == 0 || frequency > configs[index].maxFrequency) frequency = configs[index].maxFrequency;
+    if (frequency == 0 || frequency > getMaxFrequency(index)) frequency = getMaxFrequency(index);
 
     int32_t currentPos = getPosition(index);
     int32_t steps = position - currentPos;
@@ -347,9 +361,9 @@ bool HighFrequencyStepper::moveRelative(uint8_t index, int32_t steps, double fre
 
 bool HighFrequencyStepper::accelerateToFrequency(uint8_t index, double frequency, bool direction, bool waitForCompletion) { 
     if (!validateStepperIndex(index)) return false;
-    
-    if (frequency > configs[index].maxFrequency) frequency = configs[index].maxFrequency;
-    
+
+    if (frequency > getMaxFrequency(index)) frequency = getMaxFrequency(index);
+
     status[index].isMoving = true;
     status[index].currentFrequency = frequency;
     
@@ -371,9 +385,8 @@ bool HighFrequencyStepper::accelerateToFrequency(uint8_t index, double frequency
             currentError = abs(pwmSteppers[index]->getFrequency() - frequency);
             // Timeout check            
             if (loopCounter % 10 == 0) {
-                //pwmSteppers[index]->update();
                 //Serial.printf("Stepper %d moving... Current: %d, Target: %d\n", index, getPosition(index), position);
-                pwmSteppers[index]->printStatus();
+                //pwmSteppers[index]->printStatus();
             }
             if (loopCounter % 100 == 0) {
                 if (prevError <= currentError && (millis() - startTime) > maxTimeMs) {
@@ -392,9 +405,9 @@ bool HighFrequencyStepper::accelerateToFrequency(uint8_t index, double frequency
 // Start continuous movement
 bool HighFrequencyStepper::moveAtFrequency(uint8_t index, double frequency, bool direction) {
     if (!validateStepperIndex(index)) return false;
-    
-    if (frequency > configs[index].maxFrequency) frequency = configs[index].maxFrequency;
-    
+
+    if (frequency > getMaxFrequency(index)) frequency = getMaxFrequency(index);
+
     status[index].isMoving = true;
     status[index].currentFrequency = frequency;
     
@@ -670,7 +683,7 @@ bool HighFrequencyStepper::selfTest(uint8_t index) {
     
     // Test 3: Small movement test
     int32_t startPos = getPosition(index);
-    moveToPosition(index, startPos + 1000, configs[index].maxFrequency, true); // Move 100 steps at max frequency
+    moveToPosition(index, startPos + 1000, getMaxFrequency(index), true); // Move 100 steps at max frequency
     int32_t endPos = getPosition(index);
 
     if (abs(endPos - startPos - 1000) > configs[index].encoderToMicrostepRatio) { // Allow configurable step tolerance
@@ -679,8 +692,8 @@ bool HighFrequencyStepper::selfTest(uint8_t index) {
     }
     
     // Return to start position
-   moveToPosition(index, startPos, configs[index].maxFrequency, true); // Move back to start position
-    
+    moveToPosition(index, startPos, getMaxFrequency(index), true); // Move back to start position
+
     Serial.println("PASS: Self-test completed successfully");
     return true;
 }
@@ -696,7 +709,7 @@ bool HighFrequencyStepper::selfTestAll() {
             }
         }
     }
-    Serial.printf("%s", allPass ? "All steppers passed self-test!" : "Some steppers failed self-test!");
+    Serial.printf("%s\n", allPass ? "All steppers passed self-test!" : "Some steppers failed self-test!");
     return allPass;
 }
 

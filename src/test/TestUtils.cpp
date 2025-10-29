@@ -1,8 +1,9 @@
 #include "TestUtils.h"
 
-void addTestResult(String name, bool passed, String details, float accuracy) {
+void addTestResult(String stepperName, String testName, bool passed, String details, float accuracy) {
     if (testCount < 150) {
-        testResults[testCount].testName = name;
+        testResults[testCount].stepperName = stepperName;
+        testResults[testCount].testName = testName;
         testResults[testCount].passed = passed;
         testResults[testCount].details = details;
         testResults[testCount].accuracy = accuracy;
@@ -21,26 +22,14 @@ void printTestSummary() {
     
     int passedTests = 0;
     int failedTests = 0;
-    
-    Serial.println("Test Name                    | Status | Details");
-    Serial.println("---------------------------------------------|--------");
+
+    Serial.println("Stepper Name                | Test Name                    | Status | Details");
+    Serial.println("--------------------------------------------------------------------|--------");
     
     for (int i = 0; i < testCount; i++) {
         String status = testResults[i].passed ? "PASS" : "FAIL";
-        
-        // Format test name (max 28 chars)
-        String formattedName = testResults[i].testName;
-        while (formattedName.length() < 28) {
-            formattedName += " ";
-        }
-        if (formattedName.length() > 28) {
-            formattedName = formattedName.substring(0, 25) + "...";
-        }
-        
-        Serial.print(formattedName);
-        Serial.print(" | ");
-        Serial.print(status);
-        Serial.print("   | ");
+
+        Serial.printf("%-29s | %-28s | %-6s | ", testResults[i].stepperName.c_str(), testResults[i].testName.c_str(), status.c_str());
         
         if (testResults[i].accuracy > 0) {
             Serial.print(testResults[i].accuracy, 1);

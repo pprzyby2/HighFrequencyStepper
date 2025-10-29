@@ -50,7 +50,7 @@ void demonstratePositionTracking(HighFrequencyStepper& controller, uint8_t index
     controller.stop(index);
     Serial.print("Final position: "); Serial.println(controller.getPosition(index));
 
-    addTestResult("Position Tracking Demo", true, "Completed successfully");
+    addTestResult(controller.getName(index), "Position Tracking Demo", true, "Completed successfully");
 }
 
 void demonstratePositionTracking(HighFrequencyStepper& controller) {
@@ -120,10 +120,10 @@ void demonstrateClosedLoopControl(HighFrequencyStepper& controller, uint8_t inde
     // Test positioning accuracy
     int32_t finalError = abs(controller.getPosition(index) - targets[numTargets-1]);
     bool accuracyTest = (finalError <= 10);
-    addTestResult("Closed Loop Accuracy", accuracyTest, 
+    addTestResult(controller.getName(index), "Closed Loop Accuracy", accuracyTest, 
                   "Final error: " + String(finalError) + " steps");
-    
-    addTestResult("Closed Loop Demo", true, "Completed successfully");
+
+    addTestResult(controller.getName(index), "Closed Loop Demo", true, "Completed successfully");
 }
 
 void demonstrateClosedLoopControl(HighFrequencyStepper& controller) {
@@ -149,7 +149,7 @@ void testAsyncMovement(HighFrequencyStepper& stepper) {
         int maxFreq = stepper.getMaxFrequency(i); // Just to ensure it's configured
         int fullCircle = stepper.getMicrostepsPerRevolution(i);
         printf("Stepper %d max frequency: %d Hz, steps/rev: %d, target 50 circles: %d\n", i, maxFreq, fullCircle, fullCircle * 50);
-        stepper.moveToPosition(i, fullCircle * 50, maxFreq, true); // Move at max frequency
+        stepper.moveToPosition(i, fullCircle * 50, maxFreq, false); // Move at max frequency
     }
     
     // Monitor progress
@@ -167,7 +167,8 @@ void testAsyncMovement(HighFrequencyStepper& stepper) {
         delay(500); // Update every 500ms
     }
     
-    Serial.println("All steppers have reached their target positions.");
-    
-    addTestResult("Asynchronous Movement Demo", true, "Completed successfully");
+    for (uint8_t i = 0; i < numSteppers; i++) {
+        Serial.printf("Final position of Stepper %d: %d\n", i, stepper.getPosition(i));
+        addTestResult(stepper.getName(i), "Asynchronous Movement Demo", true, "Completed successfully");
+    }
 }

@@ -136,11 +136,9 @@ bool HighFrequencyStepper::initializeStepper(uint8_t index) {
     status[index].isInitialized = true;
     status[index].currentPosition = 0;
     status[index].targetPosition = 0;
-    
-    Serial.print("Stepper ");
-    Serial.print(index);
-    Serial.println(" initialized successfully");
-    
+
+    Serial.printf("Stepper %d initialized successfully\n", index);
+
     return true;
 }
 
@@ -171,15 +169,17 @@ bool HighFrequencyStepper::setMicrosteps(uint8_t index, uint16_t microsteps) {
     }
     
     configs[index].microsteps = microsteps;
-    if (!tmcDrivers[index]) return false;
-    tmcDrivers[index]->microsteps(microsteps);
-    
-    Serial.print("Stepper ");
-    Serial.print(index);
-    Serial.print(" microsteps set to ");
-    Serial.println(microsteps);
-    
-    return true;
+
+    // Adjust max frequency accordingly
+    double maxFreq = (configs[index].maxRPM / 60.0) * configs[index].microsteps * configs[index].stepsPerRev; // Convert RPM to Hz 
+    pwmSteppers[index]->setMaxFreq(maxFreq);    
+    configs[index].encoderToMicrostepRatio = float(configs[index].stepsPerRev * configs[index].microsteps) / float(configs[index].encoderResolution * configs[index].encoderAttachMode);
+    if (!tmcDrivers[index]) {
+        return false;
+    } else {
+        tmcDrivers[index]->microsteps(microsteps);
+        return true;
+    }
 }
 
 // Set RMS current
@@ -189,13 +189,9 @@ bool HighFrequencyStepper::setRMSCurrent(uint8_t index, uint16_t currentMA) {
     configs[index].rmsCurrent = currentMA;
     if (!tmcDrivers[index]) return false;
     tmcDrivers[index]->rms_current(currentMA);
-    
-    Serial.print("Stepper ");
-    Serial.print(index);
-    Serial.print(" RMS current set to ");
-    Serial.print(currentMA);
-    Serial.println(" mA");
-    
+
+    Serial.printf("Stepper %d RMS current set to %d mA\n", index, currentMA);
+
     return true;
 }
 
@@ -214,13 +210,9 @@ bool HighFrequencyStepper::setAcceleration(uint8_t index, double acceleration) {
     if (!validateStepperIndex(index)) return false;
     
     configs[index].acceleration = acceleration;
-    
-    Serial.print("Stepper ");
-    Serial.print(index);
-    Serial.print(" acceleration set to ");
-    Serial.print(acceleration);
-    Serial.println(" Hz/s");
-    
+
+    Serial.printf("Stepper %d acceleration set to %.2f Hz/s\n", index, acceleration);
+
     return true;
 }
 
@@ -357,6 +349,20 @@ bool HighFrequencyStepper::moveToPosition(uint8_t index, int32_t position, doubl
 // Move relative steps
 bool HighFrequencyStepper::moveRelative(uint8_t index, int32_t steps, double frequency, bool blocking) {
     return moveToPosition(index, getPosition(index) + steps, frequency, blocking);
+}
+
+bool HighFrequencyStepper::moveToAngle(uint8_t index, double angleDegrees, double frequency, bool blocking) {
+    if (!validateStepperIndex(index)) return false;
+    double stepsPerRev = getMicrostepsPerRevolution(index);
+    int32_t targetPosition = (int32_t)((angleDegrees / 360.0) * stepsPerRev);
+    return moveToPosition(index, targetPosition, frequency, blocking);
+}
+
+bool HighFrequencyStepper::moveToAngleRelative(uint8_t index, double angleDegrees, double frequency, bool blocking) {
+    if (!validateStepperIndex(index)) return false;
+    double stepsPerRev = getMicrostepsPerRevolution(index);
+    int32_t steps = (int32_t)((angleDegrees / 360.0) * stepsPerRev);
+    return moveRelative(index, steps, frequency, blocking);
 }
 
 bool HighFrequencyStepper::accelerateToFrequency(uint8_t index, double frequency, bool direction, bool waitForCompletion) { 
@@ -560,12 +566,9 @@ bool HighFrequencyStepper::setPosition(uint8_t index, int32_t position) {
     pulseCounters[index]->setCount(position);
     status[index].currentPosition = position;
     status[index].targetPosition = position;
-    
-    Serial.print("Stepper ");
-    Serial.print(index);
-    Serial.print(" position set to ");
-    Serial.println(position);
-    
+
+    Serial.printf("Stepper %d position set to %d\n", index, position);
+
     return true;
 }
 
@@ -579,7 +582,6 @@ StepperStatus HighFrequencyStepper::getStatus(uint8_t index) {
     updatePosition(index);
     
     // Update additional status information
-    status[index].temperature = getTemperature(index);
     status[index].stallGuard = isStallDetected(index);
     
     return status[index];
@@ -593,21 +595,6 @@ void HighFrequencyStepper::printStatus(uint8_t index) {
     }
 
     pwmSteppers[index]->printStatus();
-    // StepperStatus stat = getStatus(index);
-    
-    // Serial.printf("=== Stepper %d Status ===\n", index);
-    // Serial.printf("Initialized: %s\n", stat.isInitialized ? "YES" : "NO");
-    // Serial.printf("Enabled: %s\n", stat.isEnabled ? "YES" : "NO");
-    // Serial.printf("Moving: %s\n", stat.isMoving ? "YES" : "NO");
-    // Serial.printf("Position: %d\n", stat.currentPosition);
-    // Serial.printf("Target: %d\n", stat.targetPosition);
-    // Serial.printf("Frequency: %d Hz\n", stat.currentFrequency);
-    // Serial.printf("Temperature: %.2f°C\n", stat.temperature);
-    // Serial.printf("StallGuard: %s\n", stat.stallGuard ? "DETECTED" : "OK");
-    // Serial.printf("Microsteps: %d\n", configs[index].microsteps);
-    // Serial.printf("RMS Current: %d mA\n", configs[index].rmsCurrent);
-    // Serial.printf("Mode: %s\n", pwmSteppers[index]->getMode() == MODE_LEDC ? "LEDC" : "Timer");
-    // Serial.println("==========================");
 }
 
 // Print status for all steppers
@@ -621,15 +608,6 @@ void HighFrequencyStepper::printAllStatus() {
             printStatus(i);
         }
     }
-}
-
-// Get temperature from TMC driver
-float HighFrequencyStepper::getTemperature(uint8_t index) {
-    if (!validateStepperIndex(index)) return 0.0;
-    
-    // Note: TMC2209 doesn't have direct temperature readout
-    // This is a placeholder for future implementation
-    return 25.0; // Return room temperature as default
 }
 
 bool HighFrequencyStepper::isInLEDCMode(uint8_t index) {
@@ -713,36 +691,16 @@ bool HighFrequencyStepper::selfTestAll() {
     return allPass;
 }
 
-// Wait for movement completion
-bool HighFrequencyStepper::waitForCompletion(uint8_t index, uint32_t timeoutMS) {
-    if (!validateStepperIndex(index)) return false;
-    
-    uint32_t startTime = millis();
-    
-    while (status[index].isMoving) {
-        updatePosition(index);
-        
-        if (millis() - startTime > timeoutMS) {
-            Serial.println("Timeout waiting for movement completion");
-            return false;
-        }
-        
-        delay(10);
-    }
-    
-    return true;
-}
-
 // Additional methods for completeness...
 bool HighFrequencyStepper::isMoving(uint8_t index) {
     if (!validateStepperIndex(index)) return false;
     updatePosition(index);
-    return status[index].isMoving;
+    return pwmSteppers[index]->isMoving();
 }
 
 int32_t HighFrequencyStepper::getTargetPosition(uint8_t index) {
     if (!validateStepperIndex(index)) return 0;
-    return status[index].targetPosition;
+    return pwmSteppers[index]->getTargetPosition();
 }
 
 double HighFrequencyStepper::getCurrentFrequency(uint8_t index) {
@@ -822,12 +780,6 @@ bool HighFrequencyStepper::waitForAllCompletion(uint32_t timeoutMS) {
     }
 }
 
-bool HighFrequencyStepper::setInterpolation(uint8_t index, bool enable) {
-    if (!validateStepperIndex(index)) return false;
-    if (!tmcDrivers[index]) return false;
-    //tmcDrivers[index]->interpolate(enable);
-}
-
 bool HighFrequencyStepper::setSpreadCycle(uint8_t index, bool enable) {
     if (!validateStepperIndex(index)) return false;
     if (!tmcDrivers[index]) return false;
@@ -842,10 +794,3 @@ bool HighFrequencyStepper::setHybridThreshold(uint8_t index, uint8_t threshold) 
     return true;
 }
 
-bool HighFrequencyStepper::setCoolStep(uint8_t index, uint8_t semin, uint8_t semax, uint8_t sedn, uint8_t seimin) {
-    if (!validateStepperIndex(index)) return false;
-    if (!tmcDrivers[index]) return false;
-    //tmcDrivers[index]->TCOOLTHRS(0);
-    
-    return true;
-}

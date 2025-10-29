@@ -43,7 +43,7 @@ void testMaxSpeed(HighFrequencyStepper& controller) {
 
                 bool speedTestOK = (accuracy >= 90.0);
                 String speedName = "Stepper " + String(i) + " Speed " + String(speed) + "Hz";
-                addTestResult(speedName, speedTestOK, 
+                addTestResult(controller.getName(i), speedName, speedTestOK,
                             "Expected: " + String(expectedSteps) + ", Got: " + String(stepsCounted), 
                             accuracy);
                 if (!speedTestOK) {

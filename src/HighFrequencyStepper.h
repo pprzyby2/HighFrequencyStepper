@@ -76,7 +76,6 @@ struct StepperStatus {
     double currentFrequency;
     double targetFrequency;
     uint32_t totalSteps;
-    float temperature;
     bool stallGuard;
     
     StepperStatus() {
@@ -88,7 +87,6 @@ struct StepperStatus {
         currentFrequency = 0.0;
         targetFrequency = 0.0;
         totalSteps = 0;
-        temperature = 0.0;
         stallGuard = false;
     }
 };
@@ -150,6 +148,8 @@ public:
     // Movement methods
     bool moveToPosition(uint8_t index, int32_t position, double frequency = 0, bool blocking = true);
     bool moveRelative(uint8_t index, int32_t steps, double frequency = 0, bool blocking = true);
+    bool moveToAngle(uint8_t index, double angleDegrees, double frequency = 0, bool blocking = true);
+    bool moveToAngleRelative(uint8_t index, double angleDegrees, double frequency = 0, bool blocking = true);
     bool accelerateToFrequency(uint8_t index, double frequency, bool direction, bool waitForCompletion = false);
     bool moveAtFrequency(uint8_t index, double frequency, bool direction = true);
     bool stop(uint8_t index);
@@ -174,11 +174,7 @@ public:
     bool setPosition(uint8_t index, int32_t position);
     
     // Advanced TMC features
-    bool enableStallGuard(uint8_t index, uint8_t threshold = 10);
-    bool disableStallGuard(uint8_t index);
     bool isStallDetected(uint8_t index);
-    float getTemperature(uint8_t index);
-    uint16_t getStallGuardValue(uint8_t index);
     
     // PWM mode control
     bool isInLEDCMode(uint8_t index);
@@ -200,14 +196,11 @@ public:
     // Synchronization methods
     bool moveAllToPosition(const int32_t positions[], double frequency = 0);
     bool moveAllRelative(const int32_t steps[], double frequency = 0);
-    bool waitForCompletion(uint8_t index, uint32_t timeoutMS = 10000);
     bool waitForAllCompletion(uint32_t timeoutMS = 10000);
     
     // Advanced features
-    bool setInterpolation(uint8_t index, bool enable);
     bool setSpreadCycle(uint8_t index, bool enable);
     bool setHybridThreshold(uint8_t index, uint8_t threshold);
-    bool setCoolStep(uint8_t index, uint8_t semin, uint8_t semax, uint8_t sedn, uint8_t seimin);
 };
 
 #endif // HIGHFREQUENCYSTEPPER_H

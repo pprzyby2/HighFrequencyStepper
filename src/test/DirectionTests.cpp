@@ -23,7 +23,7 @@ void testDirectionChanges(HighFrequencyStepper& stepper, int index) {
     // Evaluate forward test
     bool forwardTest = (forwardPos >= fullCircleSteps * 0.95 && forwardPos <= fullCircleSteps * 1.05); // ±5% tolerance
     float forwardAccuracy = (float)(forwardPos) / fullCircleSteps * 100.0;
-    addTestResult("Forward Direction", forwardTest, 
+    addTestResult(stepper.getName(index), "Forward Direction", forwardTest, 
                   "Expected: " + String(fullCircleSteps) + ", Got: " + String(forwardPos), forwardAccuracy);
 
     delay(1000);
@@ -41,7 +41,7 @@ void testDirectionChanges(HighFrequencyStepper& stepper, int index) {
     // Evaluate reverse test
     bool reverseTest = (reversePos <= -fullCircleSteps * 0.95 && reversePos >= -fullCircleSteps * 1.05); // ±5% tolerance
     float reverseAccuracy = (float)abs(reversePos) / abs(-fullCircleSteps) * 100.0;
-    addTestResult("Reverse Direction", reverseTest, 
+    addTestResult(stepper.getName(index), "Reverse Direction", reverseTest, 
                   "Expected: " + String(-fullCircleSteps) + ", Got: " + String(reversePos), reverseAccuracy);
 
     delay(1000);
@@ -70,7 +70,7 @@ void testDirectionChanges(HighFrequencyStepper& stepper, int index) {
     }
     
     bool rapidChangesTest = (passedChanges >= 4); // At least 4/5 must pass
-    addTestResult("Rapid Direction Changes", rapidChangesTest, 
+    addTestResult(stepper.getName(index), "Rapid Direction Changes", rapidChangesTest,
                   String(passedChanges) + "/5 changes successful");
     
     Serial.print("Final position after direction test: "); 

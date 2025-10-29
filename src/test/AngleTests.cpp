@@ -15,7 +15,7 @@ void testAnglePrecision(HighFrequencyStepper& stepper) {
 
         Serial.printf("Testing full revolution (%d steps) at %d Hz...\n", totalSteps, testFreq);
 
-        stepper.moveToPosition(index, totalSteps, testFreq); // Move full revolution at quarter max frequency
+        stepper.moveToAngle(index, 360, testFreq, true); // Move full revolution at quarter max frequency
 
         int32_t finalPos = stepper.getPosition(index);
 
@@ -24,7 +24,7 @@ void testAnglePrecision(HighFrequencyStepper& stepper) {
         // Evaluate test
         bool testPassed = (finalPos / totalSteps > 0.95 && finalPos / totalSteps < 1.05); // ±5% tolerance
         float accuracy = (float)(finalPos) / totalSteps * 100.0;
-        addTestResult("Angle Precision", testPassed, 
+        addTestResult(stepper.getName(index), "Angle Precision", testPassed, 
                     "Expected: " + String(totalSteps) + ", Got: " + String(finalPos), accuracy);
 
         delay(1000);
@@ -39,7 +39,7 @@ void testAnglePrecision(HighFrequencyStepper& stepper) {
 
         Serial.printf("Testing full revolution (%d steps) at %d Hz...\n", totalSteps, testFreq);
 
-        stepper.moveToPosition(index, totalSteps, testFreq); // Move full revolution at quarter max frequency
+        stepper.moveToAngleRelative(index, -360, testFreq, true); // Move full revolution at quarter max frequency
 
         int32_t finalPos = stepper.getPosition(index);
 
@@ -48,7 +48,7 @@ void testAnglePrecision(HighFrequencyStepper& stepper) {
         // Evaluate test
         bool testPassed = (finalPos / totalSteps > 0.95 && finalPos / totalSteps < 1.05); // ±5% tolerance
         float accuracy = (float)(finalPos) / totalSteps * 100.0;
-        addTestResult("Angle Precision", testPassed, 
+        addTestResult(stepper.getName(index), "Angle Precision", testPassed, 
                     "Expected: " + String(totalSteps) + ", Got: " + String(finalPos), accuracy);
 
         delay(1000);

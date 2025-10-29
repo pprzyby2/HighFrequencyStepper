@@ -23,7 +23,7 @@ void testCounterOverflow(HighFrequencyStepper& controller, uint8_t index) {
     
     // Check if overflow handling worked (position should continue counting up)
     bool positiveOverflowOK = (postOverflowPos > 40000 && postOverflowPos < 60000);
-    addTestResult("Positive Overflow", positiveOverflowOK, 
+    addTestResult(controller.getName(index), "Positive Overflow", positiveOverflowOK, 
                   "Position after overflow: " + String(postOverflowPos));
 
     // Test negative overflow
@@ -42,13 +42,13 @@ void testCounterOverflow(HighFrequencyStepper& controller, uint8_t index) {
     
     // Check if negative overflow handling worked
     bool negativeOverflowOK = (finalPosition < -40000 && finalPosition > -60000);
-    addTestResult("Negative Overflow", negativeOverflowOK, 
+    addTestResult(controller.getName(index), "Negative Overflow", negativeOverflowOK, 
                   "Final position: " + String(finalPosition));
     
     // Test total range
     int32_t totalMovement = abs(finalPosition - postOverflowPos);
     bool rangeTestOK = (totalMovement > 80000); // Should have moved >80k steps total
-    addTestResult("Extended Range", rangeTestOK, 
+    addTestResult(controller.getName(index), "Extended Range", rangeTestOK, 
                   "Total movement: " + String(totalMovement) + " steps");
     
     Serial.print("Total movement through test: "); 

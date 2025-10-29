@@ -9,6 +9,7 @@
 
 // Test result structure
 struct TestResult {
+    String stepperName;
     String testName;
     bool passed;
     String details;
@@ -20,7 +21,7 @@ static TestResult testResults[150]; // Increased capacity
 static int testCount = 0;
 
 // Test utility functions
-void addTestResult(String name, bool passed, String details = "", float accuracy = 0.0);
+void addTestResult(String stepperName, String testName, bool passed, String details = "", float accuracy = 0.0);
 void printTestSummary();
 void clearTestResults();
 void printSystemStatus(HighFrequencyStepper& stepper);

@@ -68,11 +68,11 @@ enum TestOption {
     DEMO_POSITION_TRACKING = 5,
     DEMO_CLOSED_LOOP = 6,
     DEMO_SPEED_MEASUREMENT = 7,
-    RUN_ALL_TESTS = 8,
-    SHOW_SYSTEM_STATUS = 9,
-    TEST_ANGLE_PRECISION = 10,
-    TEST_MAX_SPEED = 11,
-    TEST_ASYNC_MOVEMENT = 12,
+    TEST_ANGLE_PRECISION = 8,
+    TEST_MAX_SPEED = 9,
+    TEST_ASYNC_MOVEMENT = 10,
+    RUN_ALL_TESTS = 11,
+    SHOW_SYSTEM_STATUS = 12,
     RESET_POSITION = 0
 };
 
@@ -113,7 +113,6 @@ void setup() {
     configN23.encoderBPin = N23_CNT_B_PIN;       // Different pulse counter pin
     configN23.encoderAttachMode = 4;           // Default to Full Quad
     configN23.encoderResolution = 200;         // Default 200 CPR
-    //configN23.encoderToMicrostepRatio = 8;     // 8:1 ratio for N23
     configN23.invertDirection = false;           // Reverse counting
     configN23.uart = NULL;                   // The same UART for TMC
     configN23.microsteps = 32;        // Different microsteps
@@ -142,24 +141,23 @@ void setup() {
     configN23_2.ledcChannel = 2;        // Different LEDC channel
     configN23_2.name = "N23_2_stepper";*/
 
-    StepperConfig configN23_2;
-    configN23_2.stepPin = N23_2_STEP_PIN;           // Different step pin
-    configN23_2.dirPin = N23_2_DIR_PIN;             // Different direction pin
-    configN23_2.enablePin = N23_2_EN_PIN;         // Can share enable pin
-    configN23_2.stepperEnabledHigh = true;       // Active HIGH
-    configN23_2.encoderAPin = N23_2_CNT_A_PIN;       // Different pulse counter pin
-    configN23_2.encoderBPin = N23_2_CNT_B_PIN;       // Different pulse counter pin
-    configN23_2.encoderAttachMode = 4;           // Default to Full Quad
-    configN23_2.encoderResolution = 1000;         // Default 1000 CPR
-    //configN23_2.encoderToMicrostepRatio = (200.0 * 32.0) / 4000.0;     // 4000 counts per revolution, 200 steps per revolution, 32 microsteps
-    configN23_2.invertDirection = true;           // Reverse counting
-    configN23_2.uart = NULL;                   // The same UART for TMC
-    configN23_2.microsteps = 32;        // Different microsteps
-    configN23_2.stepsPerRev = 200;
-    configN23_2.maxRPM = 2000;  // 2000 RPM max frequency
-    configN23_2.acceleration = 10000.0;          // Different acceleration
-    configN23_2.ledcChannel = 2;        // Different LEDC channel
-    configN23_2.name = "NEMA17+Encoder";
+    StepperConfig nema17_enc;
+    nema17_enc.name = "NEMA17+Encoder";
+    nema17_enc.stepPin = N23_2_STEP_PIN;           // Different step pin
+    nema17_enc.dirPin = N23_2_DIR_PIN;             // Different direction pin
+    nema17_enc.invertDirection = true;           // Reverse counting
+    nema17_enc.enablePin = N23_2_EN_PIN;         // Can share enable pin
+    nema17_enc.stepperEnabledHigh = true;       // Active HIGH
+    nema17_enc.encoderAPin = N23_2_CNT_A_PIN;       // Different pulse counter pin
+    nema17_enc.encoderBPin = N23_2_CNT_B_PIN;       // Different pulse counter pin
+    nema17_enc.encoderAttachMode = 4;           // Default to Full Quad
+    nema17_enc.encoderResolution = 1000;         // Default 1000 CPR
+    nema17_enc.uart = NULL;                   // The same UART for TMC
+    nema17_enc.microsteps = 32;        // Different microsteps
+    nema17_enc.stepsPerRev = 200;
+    nema17_enc.maxRPM = 2000;  // 2000 RPM max frequency
+    nema17_enc.acceleration = 10000.0;          // Different acceleration
+    nema17_enc.ledcChannel = 2;        // Different LEDC channel
 
     // Add steppers to controller
     // if (!stepperController.addStepper(TMC2209, configTMC2209)) {
@@ -172,7 +170,7 @@ void setup() {
         return;
     }
 
-    if (!stepperController.addStepper(1, configN23_2)) {
+    if (!stepperController.addStepper(1, nema17_enc)) {
         Serial.println("Failed to add stepper 2");
         return;
     }
@@ -190,11 +188,7 @@ void setup() {
     stepperController.printAllStatus();
     
     // Perform self-test
-    if (stepperController.selfTestAll()) {
-        Serial.println("All steppers ready for operation!");
-    } else {
-        Serial.println("Some steppers failed self-test!");
-    }
+    stepperController.selfTestAll();
 }
 
 void printTestMenu() {
@@ -206,12 +200,12 @@ void printTestMenu() {
     Serial.println("5. Position Tracking Demo");
     Serial.println("6. Closed Loop Control Demo");
     Serial.println("7. Speed Measurement Demo");
-    Serial.println("8. Run ALL Tests");
-    Serial.println("9. Show System Status");
+    Serial.println("8. Angle Precision Test");
+    Serial.println("9. Max Speed Test");
+    Serial.println("10. Asynchronous Movement Test");
+    Serial.println("11. Run ALL Tests");
+    Serial.println("12. Show System Status");
     Serial.println("0. Reset Position Counter");
-    Serial.println("10. Angle Precision Test");
-    Serial.println("11. Max Speed Test");
-    Serial.println("12. Asynchronous Movement Test");
     Serial.println("\nEnter test number (or 'h' for help): ");
 }
 
@@ -253,13 +247,7 @@ void runAllTests() {
     testMaxSpeed(stepperController);
 
     Serial.println("[10/12] Running asynchronous movement test...");
-    //testAsynchronousMovement(stepperController);
-
-    Serial.println("[11/12] Running advanced trajectory test...");
-    //testAdvancedTrajectory(stepperController);
-
-    Serial.println("[12/12] Running comprehensive system test...");
-    //testComprehensiveSystem(stepperController);
+    testAsyncMovement(stepperController);
 
     // Print comprehensive summary
     printTestSummary();

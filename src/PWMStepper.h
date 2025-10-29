@@ -103,6 +103,8 @@ public:
     bool isEnabled() const;
     bool getDirection() const;
     double getFrequency() const;
+    int64_t getTargetPosition() const { return targetPosition; }
+    bool isMoving() const { return state == STEPPER_MOVE_TO_POSITION || state == STEPPER_MOVE_WITH_FREQUENCY; }
     StepperMode getMode() const;
     int64_t getPosition() const {
         return (int) encoder->getCount() * encoderScale;

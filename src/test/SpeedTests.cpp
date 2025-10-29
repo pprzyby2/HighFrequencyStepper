@@ -43,7 +43,7 @@ void testHighSpeedAcceleration(HighFrequencyStepper& controller, uint8_t index) 
         if (speedTestOK) passedSpeeds++;
         
         String speedName = "Speed " + String(speed/1000) + "kHz";
-        addTestResult(speedName, speedTestOK, 
+        addTestResult(controller.getName(index), speedName, speedTestOK, 
                       "Expected: " + String(expectedSteps) + ", Got: " + String(stepsCounted), 
                       accuracy);
         
@@ -58,7 +58,7 @@ void testHighSpeedAcceleration(HighFrequencyStepper& controller, uint8_t index) 
 
     // Overall high speed test result
     bool overallHighSpeedOK = (passedSpeeds >= 7); // At least 7/13 speeds must pass
-    addTestResult("High Speed Overall", overallHighSpeedOK, 
+    addTestResult(controller.getName(index), "High Speed Overall", overallHighSpeedOK, 
                   String(passedSpeeds) + "/" + String(numSpeeds) + " speeds passed");
     
     Serial.println("High speed test completed!");
@@ -117,7 +117,7 @@ void testLowSpeedPrecision(HighFrequencyStepper& controller, uint8_t index) {
         Serial.printf("  Mode: %s\n", controller.isInLEDCMode(index) ? "LEDC" : "Timer");
 
         String freqName = "Low speed " + String(freq, 1) + "Hz";
-        addTestResult(freqName, testPassed, 
+        addTestResult(controller.getName(index), freqName, testPassed, 
                       "Expected: " + String(expectedSteps) + ", Got: " + String(stepsCounted), 
                       accuracy);
         
@@ -127,7 +127,7 @@ void testLowSpeedPrecision(HighFrequencyStepper& controller, uint8_t index) {
     
     // Overall low speed test result
     bool overallLowSpeedOK = (passedLowSpeeds >= 5); // At least 5/7 speeds must pass
-    addTestResult("Low Speed Overall", overallLowSpeedOK, 
+    addTestResult(controller.getName(index), "Low Speed Overall", overallLowSpeedOK, 
                   String(passedLowSpeeds) + "/" + String(numFreqs) + " speeds passed");
     
     Serial.println("Low speed test completed!");

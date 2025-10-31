@@ -120,7 +120,7 @@ void setup() {
     configN23.maxRPM = 360;  // 360 RPM max frequency
     configN23.acceleration = 10000.0;          // Different acceleration
     configN23.ledcChannel = 1;        // Different LEDC channel
-    configN23.name = "N23_stepper";
+    configN23.name = "NEMA23+Encoder";
 
     /* StepperConfig configN23_2;
     configN23_2.stepPin = N23_2_STEP_PIN;           // Different step pin

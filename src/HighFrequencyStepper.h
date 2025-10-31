@@ -151,18 +151,23 @@ public:
     bool moveToAngle(uint8_t index, double angleDegrees, double frequency = 0, bool blocking = true);
     bool moveToAngleRelative(uint8_t index, double angleDegrees, double frequency = 0, bool blocking = true);
     bool accelerateToFrequency(uint8_t index, double frequency, bool direction, bool waitForCompletion = false);
+    bool accelerateToAngularSpeed(uint8_t index, double angularSpeed, bool direction, bool waitForCompletion = false);
     bool moveAtFrequency(uint8_t index, double frequency, bool direction = true);
+    bool moveAtAngularSpeed(uint8_t index, double angularSpeed, bool direction = true);
     bool stop(uint8_t index);
     bool stopAll();
     bool emergencyStop();
     
     // Position and status methods
     int32_t getPosition(uint8_t index);
+    double getAngle(uint8_t index);
     int32_t getTargetPosition(uint8_t index);
     bool isMoving(uint8_t index);
     bool isAtPosition(uint8_t index, int32_t tolerance = 1);
     double getCurrentFrequency(uint8_t index);
-    
+    double toAngle(uint8_t index, int32_t position);
+    int32_t toPosition(uint8_t index, double angle);
+
     // Enable/disable methods
     bool enableStepper(uint8_t index);
     bool disableStepper(uint8_t index);
@@ -192,12 +197,7 @@ public:
     
     // Configuration access
     StepperConfig getConfig(uint8_t index) const;
-    
-    // Synchronization methods
-    bool moveAllToPosition(const int32_t positions[], double frequency = 0);
-    bool moveAllRelative(const int32_t steps[], double frequency = 0);
-    bool waitForAllCompletion(uint32_t timeoutMS = 10000);
-    
+        
     // Advanced features
     bool setSpreadCycle(uint8_t index, bool enable);
     bool setHybridThreshold(uint8_t index, uint8_t threshold);

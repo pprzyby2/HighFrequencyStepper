@@ -408,6 +408,15 @@ bool HighFrequencyStepper::accelerateToFrequency(uint8_t index, double frequency
     return true;
 }
 
+bool HighFrequencyStepper::accelerateToAngularSpeed(uint8_t index, double angularSpeed, bool direction, bool waitForCompletion) {
+    if (!validateStepperIndex(index)) return false;
+
+    double stepsPerRev = getMicrostepsPerRevolution(index);
+    double frequency = (angularSpeed / 360.0) * stepsPerRev; // Convert angular speed (deg/s) to frequency (Hz)
+
+    return accelerateToFrequency(index, frequency, direction, waitForCompletion);
+}
+
 // Start continuous movement
 bool HighFrequencyStepper::moveAtFrequency(uint8_t index, double frequency, bool direction) {
     if (!validateStepperIndex(index)) return false;
@@ -426,6 +435,15 @@ bool HighFrequencyStepper::moveAtFrequency(uint8_t index, double frequency, bool
     Serial.printf("Stepper %d started continuous movement at %.1f Hz\n", index, frequency);
     
     return true;
+}
+
+bool HighFrequencyStepper::moveAtAngularSpeed(uint8_t index, double angularSpeed, bool direction) {
+    if (!validateStepperIndex(index)) return false;
+
+    double stepsPerRev = getMicrostepsPerRevolution(index);
+    double frequency = (angularSpeed / 360.0) * stepsPerRev; // Convert angular speed (deg/s) to frequency (Hz)
+
+    return moveAtFrequency(index, frequency, direction);
 }
 
 // Stop specific stepper
@@ -482,6 +500,16 @@ int32_t HighFrequencyStepper::getPosition(uint8_t index) {
     status[index].currentPosition = pulseCount;
     
     return pulseCount;
+}
+
+double HighFrequencyStepper::getAngle(uint8_t index) {
+    if (!validateStepperIndex(index)) return 0.0;
+    
+    int32_t position = getPosition(index);
+    double stepsPerRev = getMicrostepsPerRevolution(index);
+    double angleDegrees = (double(position) / stepsPerRev) * 360.0;
+    
+    return angleDegrees;
 }
 
 // Update position tracking
@@ -708,6 +736,20 @@ double HighFrequencyStepper::getCurrentFrequency(uint8_t index) {
     return pwmSteppers[index]->getFrequency();
 }
 
+double HighFrequencyStepper::toAngle(uint8_t index, int32_t position) {
+    if (!validateStepperIndex(index)) return 0.0;
+    double stepsPerRev = getMicrostepsPerRevolution(index);
+    double angleDegrees = (double(position) / stepsPerRev) * 360.0;
+    return angleDegrees;
+}
+
+int32_t HighFrequencyStepper::toPosition(uint8_t index, double angleDegrees) {
+    if (!validateStepperIndex(index)) return 0;
+    double stepsPerRev = getMicrostepsPerRevolution(index);
+    int32_t position = (int32_t)((angleDegrees / 360.0) * stepsPerRev);
+    return position;
+}
+
 bool HighFrequencyStepper::isAtPosition(uint8_t index, int32_t tolerance) {
     if (!validateStepperIndex(index)) return false;
     updatePosition(index);
@@ -719,65 +761,6 @@ StepperConfig HighFrequencyStepper::getConfig(uint8_t index) const {
         return configs[index];
     }
     return StepperConfig(); // Return default config for invalid index
-}
-
-// Move all steppers to specified positions
-bool HighFrequencyStepper::moveAllToPosition(const int32_t positions[], double frequency) {
-    bool allSuccess = true;
-    
-    for (uint8_t i = 0; i < stepperCount; i++) {
-        if (pwmSteppers[i] != nullptr) {
-            if (!moveToPosition(i, positions[i], frequency)) {
-                allSuccess = false;
-            }
-        }
-    }
-    
-    return allSuccess;
-}
-
-// Move all steppers relative amounts
-bool HighFrequencyStepper::moveAllRelative(const int32_t steps[], double frequency) {
-    bool allSuccess = true;
-    
-    for (uint8_t i = 0; i < stepperCount; i++) {
-        if (pwmSteppers[i] != nullptr) {
-            if (!moveRelative(i, steps[i], frequency)) {
-                allSuccess = false;
-            }
-        }
-    }
-    
-    return allSuccess;
-}
-
-// Wait for all steppers to complete movement
-bool HighFrequencyStepper::waitForAllCompletion(uint32_t timeoutMS) {
-    uint32_t startTime = millis();
-    
-    while (true) {
-        bool anyMoving = false;
-        
-        for (uint8_t i = 0; i < stepperCount; i++) {
-            if (pwmSteppers[i] != nullptr) {
-                updatePosition(i);
-                if (status[i].isMoving) {
-                    anyMoving = true;
-                }
-            }
-        }
-        
-        if (!anyMoving) {
-            return true; // All completed
-        }
-        
-        if (millis() - startTime > timeoutMS) {
-            Serial.println("Timeout waiting for all movements to complete");
-            return false;
-        }
-        
-        delay(10);
-    }
 }
 
 bool HighFrequencyStepper::setSpreadCycle(uint8_t index, bool enable) {

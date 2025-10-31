@@ -92,7 +92,6 @@ public:
     
     // Set frequency while running
     void setTargetFrequency(double frequency);
-    void setFrequency(double frequency);
     void setAcceleration(double accel);
     void setTargetPosition(int64_t position);
     void setMaxFreq(int64_t maxFrequency) { maxFreq = maxFrequency; }   

@@ -137,9 +137,6 @@ void ARDUINO_ISR_ATTR PWMStepper::update() {
     int64_t error = targetPosition - currentPosition;
     double unitFrequencyChange = acceleration * (freqUpdateInterval * PWM_STEPPER_TIMER_DELAY / 1000000.0);
 
-    // int64_t previousPosition = positionHistory[(updateNumber - 1 + MAX_POSITION_HISTORY) % MAX_POSITION_HISTORY];
-    // uint64_t previousTime = updateTimes[(updateNumber - 1 + MAX_POSITION_HISTORY) % MAX_POSITION_HISTORY];
-    // recentFreq = (currentPosition - previousPosition) * 1000000.0 / (currentTime - previousTime + 1); // +1 to avoid div by zero
     switch (state) {
         case STEPPER_OFF:
             return;
@@ -168,18 +165,17 @@ void ARDUINO_ISR_ATTR PWMStepper::update() {
                     }
                     double newFreq = currentFreq;
                 
-                    //if (!decelerating) {
                     if (newFreq < targetFreq) {
                         newFreq += unitFrequencyChange; // Convert delay to seconds
-                        // if (newFreq > targetFreq) {
-                        //     newFreq = targetFreq;
-                        // }
+                        if (newFreq > targetFreq) {
+                            newFreq = targetFreq;
+                        }
                         // //Serial.printf("Accelerating to %.2f Hz, deceleration distance: %.2f, error: %d\n", newFreq, decelerationDistance, error);                                                                            
                     } else {
                         newFreq -= unitFrequencyChange; // Convert delay to seconds
-                        // if (newFreq < targetFreq) {
-                        //     newFreq = targetFreq;
-                        // }
+                        if (newFreq < targetFreq) {
+                            newFreq = targetFreq;
+                        }
                     }
                     startPWM(newFreq);
                 }
@@ -309,16 +305,6 @@ void PWMStepper::stopPWM() {
 
 void PWMStepper::setTargetFrequency(double frequency) {
     targetFreq = frequency;
-    state = STEPPER_MOVE_WITH_FREQUENCY;
-}
-
-// Set frequency while running
-void PWMStepper::setFrequency(double frequency) {
-    if (state == STEPPER_MOVE_WITH_FREQUENCY) {
-        startPWM(frequency);  // Restart with new frequency
-    } else {
-        onSpeedChange(frequency, direction);
-    }
 }
 
 void PWMStepper::setAcceleration(double accel) {
@@ -327,7 +313,6 @@ void PWMStepper::setAcceleration(double accel) {
 
 void PWMStepper::setTargetPosition(int64_t position) {
     targetPosition = position;
-    state = STEPPER_MOVE_TO_POSITION;
 }
 
 // Get current status
@@ -418,30 +403,16 @@ void PWMStepper::onSpeedChange(double newSpeed, bool dir) {
 void PWMStepper::step(uint32_t steps, double frequency, bool dir) {
     if (steps == 0) return;
     
-    setDirection(dir);
     enable();
+    setDirection(dir);
+    startPWM(frequency);
     
-    if (frequency >= FREQUENCY_THRESHOLD) {
-        // Use LEDC mode for high frequencies
-        startPWM(frequency);
-        
-        // Calculate duration in milliseconds
-        uint32_t duration = (steps * 1000) / frequency;
-        
-        Serial.print("LEDC stepping ");
-        Serial.print(steps);
-        Serial.print(" steps at ");
-        Serial.print(frequency);
-        Serial.print(" Hz for ");
-        Serial.print(duration);
-        Serial.println(" ms");
-        
-        delay(duration);
-        stopPWM();
-    } else {
-        // Use Timer mode for low frequencies
-        //stepTimerMode(steps, frequency, dir);
-    }
+    // Calculate duration in milliseconds
+    uint32_t duration = (steps * 1000) / frequency;
+
+    delay(duration);
+    stopPWM();
+    
 }
 
 // Move steps with automatic direction (positive = forward, negative = reverse)

@@ -82,6 +82,7 @@ void PWMStepper::begin() {
     // Setup LEDC channel
     ledcSetup(ledcChannel, ledcFrequency, ledcResolution);
     ledcAttachPin(stepPin, ledcChannel);
+    stopLEDCMode();
 
     pwmStepperInstances.push_back(this);
     initTimers();
@@ -95,11 +96,11 @@ void PWMStepper::begin() {
     state = STEPPER_IDLE;
 
     Serial.println("PWMStepper initialized successfully!");
-    Serial.print("Step Pin: "); Serial.println(stepPin);
-    Serial.print("Dir Pin: "); Serial.println(dirPin);
-    Serial.print("Enable Pin: "); Serial.println(enablePin);
-    Serial.print("LEDC Channel: "); Serial.println(ledcChannel);
-    Serial.print("Frequency Threshold: "); Serial.print(FREQUENCY_THRESHOLD); Serial.println(" Hz");
+    Serial.printf("Step Pin: %d\n", stepPin);
+    Serial.printf("Dir Pin: %d\n", dirPin);
+    Serial.printf("Enable Pin: %d\n", enablePin);
+    Serial.printf("LEDC Channel: %d\n", ledcChannel);
+    Serial.printf("Frequency Threshold: %d Hz\n", FREQUENCY_THRESHOLD);
     Serial.printf("PWM Stepper instances: %d\n", (int)pwmStepperInstances.size());
 }
 

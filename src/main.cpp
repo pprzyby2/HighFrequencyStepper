@@ -94,7 +94,7 @@ void setup() {
     configTMC2209.encoderAttachMode = 1;       // Default to Full Quad
     configTMC2209.encoderResolution = 200 * 256;    // Not really encoder. Just connect output STEP pin to input CNT and count steps (200 steps/rev * 256 microsteps)
     configTMC2209.uart = &Serial2;             // UART for TMC
-    configTMC2209.driverAddress = 0b00;   // TMC2209 address
+    configTMC2209.driverAddress = 0b00;   // TMC220 9 address
     configTMC2209.rSense = 0.11f;         // Current sense resistor
     configTMC2209.microsteps = 256;        // 256 microsteps
     configTMC2209.rmsCurrent = 800;       // 800mA RMS current
@@ -159,21 +159,43 @@ void setup() {
     nema17_enc.acceleration = 10000.0;          // Different acceleration
     nema17_enc.ledcChannel = 2;        // Different LEDC channel
 
+    StepperConfig configEncTMC2209;
+    configEncTMC2209.name = "TMC2209+Encoder";
+    configEncTMC2209.stepPin = 33;           // Step pin
+    configEncTMC2209.dirPin = 4;            // Direction pin
+    configEncTMC2209.enablePin = 27;         // Enable pin
+    configEncTMC2209.stepperEnabledHigh = false; // Active HIGH
+    configEncTMC2209.invertDirection = true; // Reverse counting
+    configEncTMC2209.encoderAPin = 25;      // Encoder A pin
+    configEncTMC2209.encoderBPin = 26;      // Encoder B pin
+    configEncTMC2209.encoderZPin = 27;      // Encoder Z pin
+    configEncTMC2209.encoderAttachMode = 4;       // Default to Full Quad
+    configEncTMC2209.encoderResolution = 1000;    // Not really encoder. Just connect output STEP pin to input CNT and count steps (200 steps/rev * 256 microsteps)
+    configEncTMC2209.uart = NULL; //&Serial2;             // UART for TMC
+    configEncTMC2209.driverAddress = 0b00;   // TMC220 9 address
+    configEncTMC2209.rSense = 0.11f;         // Current sense resistor
+    configEncTMC2209.microsteps = 64;        // microsteps
+    configEncTMC2209.rmsCurrent = 2000;       // RMS current (mA)
+    configEncTMC2209.stepsPerRev = 200;      // 200 steps per revolution
+    configEncTMC2209.maxRPM = 2500;  // Max rotation speed
+    configEncTMC2209.ledcChannel = 1;        // LEDC channel
+    configEncTMC2209.acceleration = 15000.0;          // Different acceleration
+
     // Add steppers to controller
     // if (!stepperController.addStepper(TMC2209, configTMC2209)) {
     //     Serial.println("Failed to add stepper 0");
     //     return;
     // }
 
-    if (!stepperController.addStepper(0, configN23)) {
+    if (!stepperController.addStepper(0, configEncTMC2209)) {
         Serial.println("Failed to add stepper 1");
         return;
     }
 
-    if (!stepperController.addStepper(1, nema17_enc)) {
-        Serial.println("Failed to add stepper 2");
-        return;
-    }
+    // if (!stepperController.addStepper(1, nema17_enc)) {
+    //     Serial.println("Failed to add stepper 2");
+    //     return;
+    // }
 
     // Initialize all steppers
     if (!stepperController.initializeAll()) {
@@ -181,6 +203,7 @@ void setup() {
         return;
     }
     
+    stepperController.setSpreadCycle(0, true); // Enable SpreadCycle for stepper 0
     // Enable all steppers
     stepperController.enableAll();
     

@@ -18,6 +18,7 @@ struct StepperConfig {
     bool stepperEnabledHigh; // true if enable pin is active HIGH
     uint8_t encoderAPin;    // Pin for pulse counting (can be same as stepPin)
     uint8_t encoderBPin;    // Pin for pulse counting (can be same as stepPin)
+    uint8_t encoderZPin;    // Pin for encoder zero pin (not used in current implementation)
     uint8_t encoderAttachMode; // Mode for attaching encoder (1 - Single edge, 2- HalfQuad, 4 - FullQuad)
     uint32_t encoderResolution; // Resolution of the encoder (counts per revolution)
     float encoderToMicrostepRatio; // Ratio of encoder counts to microsteps

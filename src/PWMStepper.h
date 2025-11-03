@@ -24,8 +24,8 @@ private:
     uint8_t enablePin;
     
     uint8_t ledcChannel;
-    uint32_t ledcFrequency;
-    uint8_t ledcResolution;
+    uint32_t ledcFrequency = 1000; // Default 1 kHz
+    uint8_t ledcResolution = 8;     // Default 8-bit resolution
 
     StepperState state = STEPPER_OFF;
     StepperMode mode = MODE_LEDC;

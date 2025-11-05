@@ -99,6 +99,8 @@ bool HighFrequencyStepper::addStepper(uint8_t index, const StepperConfig& config
     return true;
 }
 
+void configureDriverForHighSpeed(TMC2209Stepper* driver, uint16_t rmsCurrent, uint16_t microsteps);
+
 // Initialize a specific stepper
 bool HighFrequencyStepper::initializeStepper(uint8_t index) {
     if (!validateStepperIndex(index)) {
@@ -123,11 +125,14 @@ bool HighFrequencyStepper::initializeStepper(uint8_t index) {
     // Initialize TMC2209
     if (tmcDrivers[index]) {
         tmcDrivers[index]->begin();
-        tmcDrivers[index]->toff(5);                    // Enable driver
-        tmcDrivers[index]->rms_current(configs[index].rmsCurrent);
-        tmcDrivers[index]->microsteps(configs[index].microsteps);
-        tmcDrivers[index]->pwm_autoscale(true);        // Enable automatic current scaling
-        tmcDrivers[index]->en_spreadCycle(false);      // Use StealthChop by default
+        configureDriverForHighSpeed(tmcDrivers[index], configs[index].rmsCurrent, configs[index].microsteps);
+        //tmcDrivers[index]->toff(5);                    // Enable driver
+        // tmcDrivers[index]->rms_current(configs[index].rmsCurrent);
+        // tmcDrivers[index]->microsteps(configs[index].microsteps);
+        // //tmcDrivers[index]->pwm_autoscale(true);        // Enable automatic current scaling
+        // tmcDrivers[index]->en_spreadCycle(true);      // Use StealthChop by default
+        // tmcDrivers[index]->TCOOLTHRS(0);          // Set cool threshold
+        // tmcDrivers[index]->intpol(false);                // Set high threshold
     } else {
         Serial.println("WARNING: TMC2209 driver not initialized");
     }
@@ -140,6 +145,35 @@ bool HighFrequencyStepper::initializeStepper(uint8_t index) {
     Serial.printf("Stepper %d initialized successfully\n", index);
 
     return true;
+}
+
+void configureDriverForHighSpeed(TMC2209Stepper* driver, uint16_t rmsCurrent, uint16_t microsteps) {
+    if (!driver) return;
+    
+    // High-speed optimized settings:
+    driver->toff(5);                      // Enable with balanced chopper freq (~37 kHz)
+    driver->blank_time(24);               // Standard blank time
+    driver->rms_current(rmsCurrent);
+    driver->microsteps(microsteps);
+
+    // SpreadCycle for high speed
+    driver->en_spreadCycle(true);         // TRUE for high RPM
+    driver->TCOOLTHRS(0);                 // 0 = always use SpreadCycle
+    driver->SGTHRS(0);                    // Set stallGuard threshold
+
+    // Disable interpolation for maximum speed
+    driver->intpol(false);                // FALSE for high speed
+
+    // High-speed chopper tuning
+    driver->hysteresis_start(4);          // HSTRT: 4 is good for high speed
+    driver->hysteresis_end(0);            // HEND: 0 for fast decay
+    driver->semin(0);                     // Disable coolStep for max speed
+
+    // Current control - FIXED METHOD NAMES:
+    driver->pwm_autoscale(true);         // 
+    driver->irun(31);                     // Run current = 100% of rms_current
+    driver->hold_multiplier(16);          // Hold current = ~50% of run current
+    driver->iholddelay(5);                // Delay before reducing to hold: 5 * 2^18 clocks
 }
 
 // Initialize all steppers
@@ -157,43 +191,6 @@ bool HighFrequencyStepper::initializeAll() {
     return allSuccess;
 }
 
-// Set microsteps
-bool HighFrequencyStepper::setMicrosteps(uint8_t index, uint16_t microsteps) {
-    if (!validateStepperIndex(index)) return false;
-    
-    // Validate microsteps value
-    if (microsteps != 1 && microsteps != 2 && microsteps != 4 && microsteps != 8 && 
-        microsteps != 16 && microsteps != 32 && microsteps != 64 && microsteps != 128 && microsteps != 256) {
-        Serial.println("ERROR: Invalid microsteps value");
-        return false;
-    }
-    
-    configs[index].microsteps = microsteps;
-
-    // Adjust max frequency accordingly
-    double maxFreq = (configs[index].maxRPM / 60.0) * configs[index].microsteps * configs[index].stepsPerRev; // Convert RPM to Hz 
-    pwmSteppers[index]->setMaxFreq(maxFreq);    
-    configs[index].encoderToMicrostepRatio = float(configs[index].stepsPerRev * configs[index].microsteps) / float(configs[index].encoderResolution * configs[index].encoderAttachMode);
-    if (!tmcDrivers[index]) {
-        return false;
-    } else {
-        tmcDrivers[index]->microsteps(microsteps);
-        return true;
-    }
-}
-
-// Set RMS current
-bool HighFrequencyStepper::setRMSCurrent(uint8_t index, uint16_t currentMA) {
-    if (!validateStepperIndex(index)) return false;
-    
-    configs[index].rmsCurrent = currentMA;
-    if (!tmcDrivers[index]) return false;
-    tmcDrivers[index]->rms_current(currentMA);
-
-    Serial.printf("Stepper %d RMS current set to %d mA\n", index, currentMA);
-
-    return true;
-}
 
 // Set maximum RPM
 bool HighFrequencyStepper::setMaxRPM(uint8_t index, double rpm) {
@@ -245,31 +242,6 @@ uint8_t HighFrequencyStepper::getEnablePin(uint8_t index) const {
 uint8_t HighFrequencyStepper::getStepCountPin(uint8_t index) const {
     if (!validateStepperIndex(index)) return 255;
     return configs[index].encoderAPin;
-}
-
-HardwareSerial* HighFrequencyStepper::getUART(uint8_t index) const {
-    if (!validateStepperIndex(index)) return nullptr;
-    return uartPorts[index];
-}
-
-float HighFrequencyStepper::getRSense(uint8_t index) const {
-    if (!validateStepperIndex(index)) return 0;
-    return configs[index].rSense;
-}
-
-uint8_t HighFrequencyStepper::getDriverAddress(uint8_t index) const {
-    if (!validateStepperIndex(index)) return 0;
-    return configs[index].driverAddress;
-}
-
-uint16_t HighFrequencyStepper::getMicrosteps(uint8_t index) const {
-    if (!validateStepperIndex(index)) return 0;
-    return configs[index].microsteps;
-}
-
-uint16_t HighFrequencyStepper::getRMSCurrent(uint8_t index) const {
-    if (!validateStepperIndex(index)) return 0;
-    return configs[index].rmsCurrent;
 }
 
 uint16_t HighFrequencyStepper::getMicrostepsPerRevolution(uint8_t index) const {
@@ -329,7 +301,7 @@ bool HighFrequencyStepper::moveToPosition(uint8_t index, int32_t position, doubl
             if (loopCounter % 10 == 0) {
                 //pwmSteppers[index]->update();
                 //Serial.printf("Stepper %d moving... Current: %d, Target: %d\n", index, getPosition(index), position);
-                pwmSteppers[index]->printStatus();
+                //pwmSteppers[index]->printStatus();
             }
             if (loopCounter % 100 == 0) {
                 if (prevError <= currentError && (millis() - startTime) > maxTimeMs) {
@@ -590,13 +562,9 @@ bool HighFrequencyStepper::isEnabled(uint8_t index) {
 bool HighFrequencyStepper::setPosition(uint8_t index, int32_t position) {
     if (!validateStepperIndex(index)) return false;
     
-    //pulseCounters[index]->setPosition(position);
     pulseCounters[index]->setCount(position);
     status[index].currentPosition = position;
     status[index].targetPosition = position;
-
-    Serial.printf("Stepper %d position set to %d\n", index, position);
-
     return true;
 }
 
@@ -669,6 +637,7 @@ bool HighFrequencyStepper::selfTest(uint8_t index) {
         tmcDrivers[index]->microsteps(expectMicrosteps);
         int actualMicrosteps = tmcDrivers[index]->microsteps(); // Read back
         // Restore previous microsteps
+        Serial.printf("TMC Driver Version: 0x%08X\n", tmcDrivers[index]->version());
         tmcDrivers[index]->microsteps(previousMicrosteps);
         if (expectMicrosteps != actualMicrosteps) {
             Serial.println("FAIL: TMC communication error");
@@ -763,6 +732,45 @@ StepperConfig HighFrequencyStepper::getConfig(uint8_t index) const {
     return StepperConfig(); // Return default config for invalid index
 }
 
+/**
+ * TMC2209 Specific Settings
+ */
+bool HighFrequencyStepper::setMicrosteps(uint8_t index, uint16_t microsteps) {
+    if (!validateStepperIndex(index)) return false;
+    
+    // Validate microsteps value
+    if (microsteps != 1 && microsteps != 2 && microsteps != 4 && microsteps != 8 && 
+        microsteps != 16 && microsteps != 32 && microsteps != 64 && microsteps != 128 && microsteps != 256) {
+        Serial.println("ERROR: Invalid microsteps value");
+        return false;
+    }
+    
+    configs[index].microsteps = microsteps;
+
+    // Adjust max frequency accordingly
+    double maxFreq = (configs[index].maxRPM / 60.0) * configs[index].microsteps * configs[index].stepsPerRev; // Convert RPM to Hz 
+    pwmSteppers[index]->setMaxFreq(maxFreq);    
+    configs[index].encoderToMicrostepRatio = float(configs[index].stepsPerRev * configs[index].microsteps) / float(configs[index].encoderResolution * configs[index].encoderAttachMode);
+    if (!tmcDrivers[index]) {
+        return false;
+    } else {
+        tmcDrivers[index]->microsteps(microsteps);
+        return true;
+    }
+}
+
+bool HighFrequencyStepper::setRMSCurrent(uint8_t index, uint16_t currentMA) {
+    if (!validateStepperIndex(index)) return false;
+    
+    configs[index].rmsCurrent = currentMA;
+    if (!tmcDrivers[index]) return false;
+    tmcDrivers[index]->rms_current(currentMA);
+
+    Serial.printf("Stepper %d RMS current set to %d mA\n", index, currentMA);
+
+    return true;
+}
+
 bool HighFrequencyStepper::setSpreadCycle(uint8_t index, bool enable) {
     if (!validateStepperIndex(index)) return false;
     if (!tmcDrivers[index]) return false;
@@ -775,5 +783,45 @@ bool HighFrequencyStepper::setHybridThreshold(uint8_t index, uint8_t threshold) 
     if (!tmcDrivers[index]) return false;
     tmcDrivers[index]->TCOOLTHRS(threshold);
     return true;
+}
+
+bool HighFrequencyStepper::setCoolStep(uint8_t index, uint16_t value) {
+    if (!validateStepperIndex(index)) return false;
+    if (!tmcDrivers[index]) return false;
+    tmcDrivers[index]->semin(value); // TODO: Validate the method and value
+    return true;
+}
+
+// stallguard 255 is most sensitive value, 0 is least sensitive
+bool HighFrequencyStepper::setStallGuardThreshold(uint8_t index, uint16_t threshold) {
+    if (!validateStepperIndex(index)) return false;
+    if (!tmcDrivers[index]) return false;
+    tmcDrivers[index]->SGTHRS(threshold);
+    return true;
+}
+
+uint16_t HighFrequencyStepper::getMicrosteps(uint8_t index) const {
+    if (!validateStepperIndex(index)) return 0;
+    return configs[index].microsteps;
+}
+
+uint16_t HighFrequencyStepper::getRMSCurrent(uint8_t index) const {
+    if (!validateStepperIndex(index)) return 0;
+    return configs[index].rmsCurrent;
+}
+
+float HighFrequencyStepper::getRSense(uint8_t index) const {
+    if (!validateStepperIndex(index)) return 0;
+    return configs[index].rSense;
+}
+
+HardwareSerial* HighFrequencyStepper::getUART(uint8_t index) const {
+    if (!validateStepperIndex(index)) return nullptr;
+    return uartPorts[index];
+}
+
+uint8_t HighFrequencyStepper::getDriverAddress(uint8_t index) const {
+    if (!validateStepperIndex(index)) return 0;
+    return configs[index].driverAddress;
 }
 

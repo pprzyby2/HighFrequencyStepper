@@ -26,6 +26,22 @@ static void ARDUINO_ISR_ATTR onPWMStepperTimer(void *arg)
     }
 }
 
+// Helper to try configuring LEDC timer with given bits/clock
+static bool try_config_ledc_timer(ledc_mode_t speedMode,
+                                  ledc_timer_t timer,
+                                  uint8_t bits,
+                                  uint32_t freq,
+                                  ledc_clk_cfg_t clk)
+{
+    ledc_timer_config_t tcfg = {};
+    tcfg.speed_mode       = speedMode;
+    tcfg.timer_num        = timer;
+    tcfg.duty_resolution  = (ledc_timer_bit_t)bits;
+    tcfg.freq_hz          = freq;
+    tcfg.clk_cfg          = clk;
+    return ledc_timer_config(&tcfg) == ESP_OK;
+}
+
 void initTimers() {
     if (pwm_stepper_timer != nullptr) {
         return; // Already initialized
@@ -366,18 +382,99 @@ void PWMStepper::printStatus() const {
 }
 
 // LEDC Mode Methods
-void PWMStepper::startLEDCMode(double frequency) {
-    // Reconfigure LEDC with new frequency and resolution
-    ledcSetup(ledcChannel, frequency, 4); // 4-bit resolution (0-15) - we use half the range for 50% duty cycle anyway
-    ledcAttachPin(stepPin, ledcChannel);
+// void PWMStepper::startLEDCMode(double frequency) {
+//     // Reconfigure LEDC with new frequency and resolution
+//     ledcSetup(ledcChannel, frequency, 4); // 4-bit resolution (0-15) - we use half the range for 50% duty cycle anyway
+//     ledcAttachPin(stepPin, ledcChannel);
     
-    // Set 50% duty cycle for square wave
-    uint32_t dutyCycle = 8;  // 50% duty cycle
-    ledcWrite(ledcChannel, dutyCycle);
+//     // Set 50% duty cycle for square wave
+//     uint32_t dutyCycle = 8;  // 50% duty cycle
+//     ledcWrite(ledcChannel, dutyCycle);
+// }
+
+// Robust LEDC setup that auto-picks clock and resolution
+void PWMStepper::startLEDCMode(double frequency)
+{
+    // Detach first to avoid "not initialized" errors
+    ledcDetachPin(stepPin);
+
+    // Try fast clocks first on S3: 160 MHz, then 80 MHz, then AUTO (as last resort)
+    const ledc_clk_cfg_t clocksToTry[] = {
+        LEDC_USE_APB_CLK,     // 80 MHz
+        LEDC_AUTO_CLK         // may select REF_TICK (1 MHz) -> low max freq
+    };
+
+    // Start from requested or current resolution, clamp 1..15
+    uint8_t startBits = ledcResolution > 0 ? ledcResolution : 8;
+    if (startBits < 1) startBits = 1;
+    if (startBits > 15) startBits = 15;
+
+    bool configured = false;
+    uint8_t chosenBits = startBits;
+    ledc_clk_cfg_t chosenClk = LEDC_USE_APB_CLK;
+
+    for (ledc_clk_cfg_t clk : clocksToTry) {
+        for (int bits = startBits; bits >= 1; --bits) {
+            if (try_config_ledc_timer(ledcSpeedMode, ledcTimer, bits, (uint32_t)frequency, clk)) {
+                chosenBits = (uint8_t)bits;
+                chosenClk = clk;
+                configured = true;
+                break;
+            }
+        }
+        if (configured) break;
+    }
+
+    if (!configured) {
+        ESP_LOGE("PWMStepper", "LEDC setup failed for %.1f Hz at all clocks/resolutions, using Timer mode", frequency);
+        mode = MODE_TIMER;
+        startTimerMode(frequency);
+        return;
+    }
+
+    // Configure channel on the selected timer
+    ledc_channel_config_t c = {};
+    c.gpio_num   = stepPin;
+    c.speed_mode = ledcSpeedMode;
+    c.channel    = (ledc_channel_t)ledcChannel;
+    c.intr_type  = LEDC_INTR_DISABLE;
+    c.timer_sel  = ledcTimer;
+    c.duty       = 1u << (chosenBits - 1); // ~50%
+    c.hpoint     = 0;
+    c.flags.output_invert = 0;
+
+    esp_err_t err = ledc_channel_config(&c);
+    if (err != ESP_OK) {
+        // ESP_LOGE("PWMStepper", "LEDC channel config failed (%d), falling back to Timer mode", (int)err);
+        mode = MODE_TIMER;
+        startTimerMode(frequency);
+        return;
+    }
+
+    // Write initial duty to start output
+    ledcResolutionBits = chosenBits;
+    ledcClk = chosenClk;
+    ledcFrequency = (uint32_t)frequency;
+
+    //ledcUpdateDuty(ledcSpeedMode, (ledc_channel_t)ledcChannel);
+    ledcWrite(ledcChannel, 1u << (chosenBits - 1)); // ~50%
+
+    mode = MODE_LEDC;
+    // ESP_LOGI("PWMStepper", "LEDC OK: f=%.1f Hz, res=%u-bit, clk=%s",
+    //          frequency,
+    //          (unsigned)chosenBits,
+    //          (chosenClk == LEDC_USE_PLL_DIV_CLK ? "PLL160" :
+    //           chosenClk == LEDC_USE_APB_CLK ? "APB80" : "AUTO"));
 }
 
+
+
+
 void PWMStepper::stopLEDCMode() {
-    ledcWrite(ledcChannel, 0);  // 0% duty cycle
+    // Ensure channel is stopped and pin is released
+    ledc_stop(ledcSpeedMode, (ledc_channel_t)ledcChannel, 0 /*idle level*/);
+
+    //ledcWrite(ledcChannel, 0);  // 0% duty cycle
     ledcDetachPin(stepPin);
 }
 

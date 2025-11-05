@@ -125,8 +125,6 @@ public:
     bool initializeAll();
     
     // Configuration methods
-    bool setMicrosteps(uint8_t index, uint16_t microsteps);
-    bool setRMSCurrent(uint8_t index, uint16_t currentMA);
     bool setMaxRPM(uint8_t index, double rpm);
     bool setAcceleration(uint8_t index, double acceleration);
     bool setName(uint8_t index, const String& name);
@@ -135,16 +133,26 @@ public:
     uint8_t getDirPin(uint8_t index) const;
     uint8_t getEnablePin(uint8_t index) const;
     uint8_t getStepCountPin(uint8_t index) const;
-    HardwareSerial* getUART(uint8_t index) const;
-    float getRSense(uint8_t index) const;
-    uint8_t getDriverAddress(uint8_t index) const;
-    uint16_t getMicrosteps(uint8_t index) const;
-    uint16_t getRMSCurrent(uint8_t index) const;
     uint16_t getMicrostepsPerRevolution(uint8_t index) const;
     double getMaxFrequency(uint8_t index) const;
     double getMaxRPM(uint8_t index) const;
     double getAcceleration(uint8_t index) const;
     bool getInvertDirection(uint8_t index) const;
+
+    // TMC2209 Specific Settings
+    bool setMicrosteps(uint8_t index, uint16_t microsteps);
+    bool setRMSCurrent(uint8_t index, uint16_t currentMA);
+    bool setSpreadCycle(uint8_t index, bool enable);
+    bool setHybridThreshold(uint8_t index, uint8_t threshold);
+    bool setCoolStep(uint8_t index, uint16_t value);
+    bool setStallGuardThreshold(uint8_t index, uint16_t threshold);
+
+    uint16_t getMicrosteps(uint8_t index) const;
+    uint16_t getRMSCurrent(uint8_t index) const;
+    float getRSense(uint8_t index) const;
+    HardwareSerial* getUART(uint8_t index) const;
+    uint8_t getDriverAddress(uint8_t index) const;
+
     
     // Movement methods
     bool moveToPosition(uint8_t index, int32_t position, double frequency = 0, bool blocking = true);
@@ -198,10 +206,6 @@ public:
     
     // Configuration access
     StepperConfig getConfig(uint8_t index) const;
-        
-    // Advanced features
-    bool setSpreadCycle(uint8_t index, bool enable);
-    bool setHybridThreshold(uint8_t index, uint8_t threshold);
 };
 
 #endif // HIGHFREQUENCYSTEPPER_H

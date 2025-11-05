@@ -78,7 +78,7 @@ enum TestOption {
 
 void setup() {
     Serial.begin(115200);
-    Serial2.begin(115200);
+    Serial1.begin(115200, SERIAL_8N1, /*RX=*/18, /*TX=*/17);
     delay(2000);
     
     Serial.println("=== HighFrequencyStepper Example ===");
@@ -161,21 +161,21 @@ void setup() {
 
     StepperConfig configEncTMC2209;
     configEncTMC2209.name = "TMC2209+Encoder";
-    configEncTMC2209.stepPin = 33;           // Step pin
-    configEncTMC2209.dirPin = 4;            // Direction pin
-    configEncTMC2209.enablePin = 27;         // Enable pin
+    configEncTMC2209.stepPin = 4;           // Step pin
+    configEncTMC2209.dirPin = 5;            // Direction pin
+    configEncTMC2209.enablePin = 19;         // Enable pin
     configEncTMC2209.stepperEnabledHigh = false; // Active HIGH
     configEncTMC2209.invertDirection = true; // Reverse counting
-    configEncTMC2209.encoderAPin = 25;      // Encoder A pin
-    configEncTMC2209.encoderBPin = 26;      // Encoder B pin
+    configEncTMC2209.encoderAPin = 6;      // Encoder A pin
+    configEncTMC2209.encoderBPin = 7;      // Encoder B pin
     configEncTMC2209.encoderZPin = 27;      // Encoder Z pin
     configEncTMC2209.encoderAttachMode = 4;       // Default to Full Quad
     configEncTMC2209.encoderResolution = 1000;    // Not really encoder. Just connect output STEP pin to input CNT and count steps (200 steps/rev * 256 microsteps)
-    configEncTMC2209.uart = NULL; //&Serial2;             // UART for TMC
+    configEncTMC2209.uart = &Serial1;             // UART for TMC
     configEncTMC2209.driverAddress = 0b00;   // TMC220 9 address
     configEncTMC2209.rSense = 0.11f;         // Current sense resistor
     configEncTMC2209.microsteps = 64;        // microsteps
-    configEncTMC2209.rmsCurrent = 2000;       // RMS current (mA)
+    configEncTMC2209.rmsCurrent = 800;       // RMS current (mA)
     configEncTMC2209.stepsPerRev = 200;      // 200 steps per revolution
     configEncTMC2209.maxRPM = 2500;  // Max rotation speed
     configEncTMC2209.ledcChannel = 1;        // LEDC channel
@@ -356,7 +356,8 @@ void processSerialInput() {
 
             case TEST_MAX_SPEED:
                 clearTestResults();
-                testMaxSpeed(stepperController);
+                optimizeForMaxSpeed(stepperController, 0); // Optimize stepper 0 for max speed
+                //testMaxSpeed(stepperController);
                 printTestSummary();
                 break;
 

@@ -93,9 +93,10 @@ void setup() {
     configTMC2209.encoderBPin = DIR_PIN;      // Pulse counter pin
     configTMC2209.encoderAttachMode = 1;       // Default to Full Quad
     configTMC2209.encoderResolution = 200 * 256;    // Not really encoder. Just connect output STEP pin to input CNT and count steps (200 steps/rev * 256 microsteps)
-    configTMC2209.uart = &Serial2;             // UART for TMC
-    configTMC2209.driverAddress = 0b00;   // TMC220 9 address
-    configTMC2209.rSense = 0.11f;         // Current sense resistor
+    configTMC2209.driverSettings.driverType = TMC2209_DRIVER;
+    configTMC2209.driverSettings.uartConfig.uart = &Serial2;             // UART for TMC
+    configTMC2209.driverSettings.uartConfig.driverAddress = 0b00;   // TMC220 9 address
+    configTMC2209.driverSettings.uartConfig.rSense = 0.11f;         // Current sense resistor
     configTMC2209.microsteps = 256;        // 256 microsteps
     configTMC2209.rmsCurrent = 800;       // 800mA RMS current
     configTMC2209.stepsPerRev = 200;      // 200 steps per revolution
@@ -114,7 +115,7 @@ void setup() {
     configN23.encoderAttachMode = 4;           // Default to Full Quad
     configN23.encoderResolution = 200;         // Default 200 CPR
     configN23.invertDirection = false;           // Reverse counting
-    configN23.uart = NULL;                   // The same UART for TMC
+    configN23.driverSettings.driverType = DriverType::STEP_DIR_ONLY;
     configN23.microsteps = 32;        // Different microsteps
     configN23.stepsPerRev = 200;
     configN23.maxRPM = 360;  // 360 RPM max frequency
@@ -152,7 +153,7 @@ void setup() {
     nema17_enc.encoderBPin = N23_2_CNT_B_PIN;       // Different pulse counter pin
     nema17_enc.encoderAttachMode = 4;           // Default to Full Quad
     nema17_enc.encoderResolution = 1000;         // Default 1000 CPR
-    nema17_enc.uart = NULL;                   // The same UART for TMC
+    nema17_enc.driverSettings.driverType = DriverType::STEP_DIR_ONLY;
     nema17_enc.microsteps = 32;        // Different microsteps
     nema17_enc.stepsPerRev = 200;
     nema17_enc.maxRPM = 2000;  // 2000 RPM max frequency
@@ -171,9 +172,10 @@ void setup() {
     configEncTMC2209.encoderZPin = 27;      // Encoder Z pin
     configEncTMC2209.encoderAttachMode = 4;       // Default to Full Quad
     configEncTMC2209.encoderResolution = 1000;    // Not really encoder. Just connect output STEP pin to input CNT and count steps (200 steps/rev * 256 microsteps)
-    configEncTMC2209.uart = &Serial1;             // UART for TMC
-    configEncTMC2209.driverAddress = 0b00;   // TMC220 9 address
-    configEncTMC2209.rSense = 0.11f;         // Current sense resistor
+    configEncTMC2209.driverSettings.driverType = TMC2209_DRIVER;
+    configEncTMC2209.driverSettings.uartConfig.uart = &Serial1;             // UART for TMC
+    configEncTMC2209.driverSettings.uartConfig.driverAddress = 0b00;   // TMC220 9 address
+    configEncTMC2209.driverSettings.uartConfig.rSense = 0.11f;         // Current sense resistor
     configEncTMC2209.microsteps = 64;        // microsteps
     configEncTMC2209.rmsCurrent = 800;       // RMS current (mA)
     configEncTMC2209.stepsPerRev = 200;      // 200 steps per revolution

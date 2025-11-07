@@ -9,6 +9,35 @@
 // Maximum number of steppers supported
 #define MAX_STEPPERS 4
 
+// Use default driver (hardwired step/direction only)
+// TMC2209 stepper driver (configurable via UART)
+// TMC2240 stepper driver (configurable via SPI)
+enum DriverType {
+    STEP_DIR_ONLY = 0,
+    TMC2209_DRIVER = 1,
+    TMC2240_DRIVER = 2
+};
+
+struct UARTConfig {
+    HardwareSerial* uart;    // Pointer to HardwareSerial instance
+    uint8_t driverAddress;   // TMC2209 address (usually configured with MS1, MS2 pins: 0b00, 0b01, 0b10, 0b11)
+    float rSense;            // Current sense resistor value (based on driver's internal resistors, typically 0.11 or 0.075 Ohms)
+};
+
+struct SPIConfig {
+    uint8_t pinCS;          // Chip Select pin
+    uint8_t pinMOSI;        // MOSI pin
+    uint8_t pinMISO;        // MISO pin
+    uint8_t pinSCK;         // SCK pin
+    uint8_t link_index;     // Link index in SPI chain
+};
+
+struct StepperDriverSettings {
+    DriverType driverType;  // Type of stepper driver
+    UARTConfig uartConfig;   // UART configuration (for TMC2209)
+    SPIConfig spiConfig;     // SPI configuration (for TMC2240)
+};
+
 // Configuration structure for each stepper
 struct StepperConfig {
     // Pin assignments
@@ -22,11 +51,10 @@ struct StepperConfig {
     uint8_t encoderAttachMode; // Mode for attaching encoder (1 - Single edge, 2- HalfQuad, 4 - FullQuad)
     uint32_t encoderResolution; // Resolution of the encoder (counts per revolution)
     float encoderToMicrostepRatio; // Ratio of encoder counts to microsteps
-    HardwareSerial* uart;    // Pointer to HardwareSerial instance for TMC communication
-    
+
     // TMC2209 configuration
-    uint8_t driverAddress;   // TMC2209 address (0b00, 0b01, 0b10, 0b11)
-    float rSense;            // Current sense resistor value (typically 0.11)
+
+    StepperDriverSettings driverSettings;
     
     // Motor parameters
     uint16_t microsteps;     // Microsteps per full step (1, 2, 4, 8, 16, 32, 64, 128, 256)
@@ -54,8 +82,15 @@ struct StepperConfig {
         encoderAttachMode = 1; // Default to Single edge
         encoderToMicrostepRatio = 1; // Default 1:1
         encoderResolution = 1000; // Default 1000 CPR
-        driverAddress = 0;
-        rSense = 0.11f;
+        driverSettings.driverType = STEP_DIR_ONLY;
+        driverSettings.uartConfig.uart = nullptr;
+        driverSettings.uartConfig.driverAddress = 0;
+        driverSettings.uartConfig.rSense = 0.11f;
+        driverSettings.spiConfig.pinCS = 0;
+        driverSettings.spiConfig.pinMOSI = 0;
+        driverSettings.spiConfig.pinMISO = 0;
+        driverSettings.spiConfig.pinSCK = 0;
+        driverSettings.spiConfig.link_index = 0;
         microsteps = 16;
         rmsCurrent = 800;
         stepsPerRev = 200;
@@ -97,7 +132,8 @@ private:
     // Arrays to hold instances for each stepper
     PWMStepper* pwmSteppers[MAX_STEPPERS];
     ESP32Encoder* pulseCounters[MAX_STEPPERS];
-    TMC2209Stepper* tmcDrivers[MAX_STEPPERS];
+    TMC2209Stepper* tmc2209Drivers[MAX_STEPPERS];
+    TMC2240Stepper* tmc2240Drivers[MAX_STEPPERS];
     HardwareSerial* uartPorts[MAX_STEPPERS];
     
     // Configuration and status for each stepper

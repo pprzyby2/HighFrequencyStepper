@@ -3,7 +3,7 @@
 
 #include <Arduino.h>
 #include "PWMStepper.h"
-#include <TMCStepper.h>
+#include "TMCStepper.h"
 #include <ESP32Encoder.h>
 
 // Maximum number of steppers supported

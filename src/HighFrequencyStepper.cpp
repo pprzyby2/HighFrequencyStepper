@@ -1,4 +1,5 @@
 #include "HighFrequencyStepper.h"
+#include "SPI.h"
 
 // Constructor
 HighFrequencyStepper::HighFrequencyStepper() {
@@ -71,9 +72,14 @@ bool HighFrequencyStepper::addStepper(uint8_t index, const StepperConfig& config
         return false;
     }
     configs[index].encoderToMicrostepRatio = float(config.stepsPerRev * config.microsteps) / float(config.encoderResolution * config.encoderAttachMode);
+    pinMode(config.encoderZPin, INPUT_PULLUP);
+    attachInterrupt(digitalPinToInterrupt(config.encoderZPin), []() {
+        // Handle Z pin interrupt (e.g., reset position)
+    }, RISING);
 
     // Create PWMStepper instance
     pwmSteppers[index] = new PWMStepper(pulseCounters[index], configs[index].encoderToMicrostepRatio, config.stepPin, config.dirPin, config.enablePin, config.ledcChannel);
+    pwmSteppers[index]->setStepperEnabledHigh(config.stepperEnabledHigh);
     if (!pwmSteppers[index]) {
         Serial.println("ERROR: Failed to create PWMStepper instance");
         return false;
@@ -88,16 +94,11 @@ bool HighFrequencyStepper::addStepper(uint8_t index, const StepperConfig& config
         uartPorts[index] = configs[index].driverSettings.uartConfig.uart;    
         tmc2209Drivers[index] = new TMC2209Stepper(uartPorts[index], config.driverSettings.uartConfig.rSense, config.driverSettings.uartConfig.driverAddress);
     } else if (config.driverSettings.driverType == TMC2240_DRIVER) {
-        if (config.driverSettings.spiConfig.pinCS == 0) {
-            Serial.println("ERROR: SPI CS pin not configured for TMC2240 driver");
-            return false;
-        }
         TMC2240Stepper *tmc2240Driver = new TMC2240Stepper(
             config.driverSettings.spiConfig.pinCS, 
             config.driverSettings.spiConfig.pinMOSI, 
             config.driverSettings.spiConfig.pinMISO, 
-            config.driverSettings.spiConfig.pinSCK, 
-            config.driverSettings.spiConfig.link_index);
+            config.driverSettings.spiConfig.pinSCK);
         uartPorts[index] = nullptr; // No UART for TMC2240
         tmc2240Drivers[index] = tmc2240Driver;
     } else {
@@ -143,29 +144,79 @@ bool HighFrequencyStepper::initializeStepper(uint8_t index) {
     if (tmc2209Drivers[index]) {
         tmc2209Drivers[index]->begin();
         configureDriverForHighSpeed(tmc2209Drivers[index], configs[index].rmsCurrent, configs[index].microsteps);
-        //tmcDrivers[index]->toff(5);                    // Enable driver
-        // tmcDrivers[index]->rms_current(configs[index].rmsCurrent);
-        // tmcDrivers[index]->microsteps(configs[index].microsteps);
-        // //tmcDrivers[index]->pwm_autoscale(true);        // Enable automatic current scaling
-        // tmcDrivers[index]->en_spreadCycle(true);      // Use StealthChop by default
-        // tmcDrivers[index]->TCOOLTHRS(0);          // Set cool threshold
-        // tmcDrivers[index]->intpol(false);                // Set high threshold
     } else if (tmc2240Drivers[index]) {
-        tmc2240Drivers[index]->begin();
-        // Additional TMC2240 configuration can be added here
-        tmc2240Drivers[index]->rms_current(configs[index].rmsCurrent);
-        tmc2240Drivers[index]->microsteps(configs[index].microsteps);
-        tmc2240Drivers[index]->en_spreadCycle(true);
-        tmc2240Drivers[index]->TCOOLTHRS(0);
-        //tmc2240Drivers[index]->SGTHRS(0);
-        tmc2240Drivers[index]->intpol(false);
-        tmc2240Drivers[index]->hysteresis_start(4);
-        tmc2240Drivers[index]->hysteresis_end(0);
-        tmc2240Drivers[index]->semin(0);
-        tmc2240Drivers[index]->pwm_autoscale(true);
-        tmc2240Drivers[index]->irun(31);
-        //tmc2240Drivers[index]->hold_multiplier(16);
-        tmc2240Drivers[index]->iholddelay(5);
+        TMC2240Stepper *tmc2240Driver = tmc2240Drivers[index];
+        while (true) {
+            enableStepper(index);
+            tmc2240Driver->defaults();
+            tmc2240Driver->rms_current(configs[index].rmsCurrent, 0.5); // Set motor RMS current
+            tmc2240Drivers[index]->microsteps(configs[index].microsteps); // Set microsteps
+            uint16_t checkMicrosteps = tmc2240Drivers[index]->microsteps();
+
+            bool stealthChop = true;
+            if (stealthChop) {
+                tmc2240Driver->en_pwm_mode(true);
+                tmc2240Driver->pwm_autoscale(true);
+                tmc2240Driver->pwm_grad(1); // Slope of the PWM current
+                tmc2240Driver->pwm_meas_sd_enable(true); // Enable automatic current scaling
+                tmc2240Driver->pwm_freq(1); // PWM frequency setting
+                tmc2240Driver->toff(3);              // Enable driver with good chopper frequency
+                tmc2240Driver->TBL(2);              // Set blank time to 24 clocks
+                tmc2240Driver->hstrt(4);             // HSTRT: 4 is good for high speed
+                tmc2240Driver->hend(0);              // Fast current decay
+                tmc2240Drivers[index]->TPWMTHRS(100);             // Threshold (number of clk cycles between microsteps) for switching to SpreadCycle
+                //tmc2240Driver->automatic_tuning(true); // Enable automatic tuning
+                uint32_t chopConf = tmc2240Driver->CHOPCONF();
+                // Function to set bits in a uint32_t reference parameter
+                auto setBits = [](uint32_t& value, uint8_t newBits, uint8_t startPos, uint8_t endPos) {
+                    uint8_t numBits = endPos - startPos + 1;
+                    uint32_t mask = ((1UL << numBits) - 1) << startPos;
+                    value = (value & ~mask) | ((uint32_t(newBits) << startPos) & mask);
+                };
+
+                setBits(chopConf, 5, 0, 3); // toff = 5
+                setBits(chopConf, 2, 15, 16); // tbl = 2
+                setBits(chopConf, 0, 4, 6); // hstrt = 0
+                setBits(chopConf, 0, 7, 10); // hend = 0
+                setBits(chopConf, 0, 28, 28); // intpol = true
+                tmc2240Driver->CHOPCONF(chopConf); 
+            } else {
+                tmc2240Driver->en_pwm_mode(false);
+                tmc2240Drivers[index]->toff(5);
+                tmc2240Drivers[index]->TBL(2);               // Set blank time to 24 clocks
+                tmc2240Driver->hstrt(0);             // HSTRT: 4 is good for high speed
+                tmc2240Driver->hend(0);              // Fast current decay
+                //tmc2240Drivers[index]->en_pwm_mode(true); // Enable extremely quiet stepping
+                // // For maximum speed with TMC2240:
+                tmc2240Drivers[index]->THIGH(15);                  // High threshold voltage
+                tmc2240Drivers[index]->TCOOLTHRS(20);                 // 0 = always use SpreadCycle
+                tmc2240Drivers[index]->TPWMTHRS(50);             // Threshold (number of clk cycles between microsteps) for switching to SpreadCycle
+                tmc2240Drivers[index]->vhighfs(true);
+                tmc2240Drivers[index]->chm(0);                  // 0 - Use SpreadCycle chopper, 1 - Use classic chopper
+                tmc2240Drivers[index]->hysteresis_start(0);      // HSTRT: 4 is good for high speed
+                tmc2240Drivers[index]->hysteresis_end(0);        // Fast current decay
+                tmc2240Drivers[index]->irun(31);                 // Disable coolStep
+                tmc2240Drivers[index]->ihold(8);      // Hold current = ~50% of run current
+                tmc2240Drivers[index]->iholddelay(5);           // Delay before
+                
+                tmc2240Drivers[index]->intpol(false);            // No interpolation delay            
+                tmc2240Drivers[index]->pwm_autoscale(false);     // Consistent performance
+
+            }
+            
+            tmc2240Drivers[index]->begin();
+
+            if (tmc2240Drivers[index]->test_connection() == 0 && checkMicrosteps == configs[index].microsteps) {//configs[index].rmsCurrent) {
+                Serial.printf("TMC2240 driver %d connected successfully\n", index);
+                Serial.printf("Driver RMS Current: %d mA\n", tmc2240Drivers[index]->rms_current());
+                Serial.printf("Driver Microsteps: %d\n", tmc2240Drivers[index]->microsteps());
+                break;
+            } else {
+                Serial.printf("TMC2240 driver %d connection failed, retrying...\n", index);
+                delay(1000);
+            }
+        }
+
 
     } else {
         Serial.println("WARNING: TMC2209 driver not initialized");
@@ -183,7 +234,8 @@ bool HighFrequencyStepper::initializeStepper(uint8_t index) {
 
 void configureDriverForHighSpeed(TMC2209Stepper* driver, uint16_t rmsCurrent, uint16_t microsteps) {
     if (!driver) return;
-    
+    driver->defaults();
+
     // High-speed optimized settings:
     driver->toff(5);                      // Enable with balanced chopper freq (~37 kHz)
     driver->blank_time(24);               // Standard blank time
@@ -192,7 +244,8 @@ void configureDriverForHighSpeed(TMC2209Stepper* driver, uint16_t rmsCurrent, ui
 
     // SpreadCycle for high speed
     driver->en_spreadCycle(true);         // TRUE for high RPM
-    driver->TCOOLTHRS(0);                 // 0 = always use SpreadCycle
+    driver->TCOOLTHRS(40);                 // 0 = always use SpreadCycle
+    driver->TPWMTHRS(50);                 // Threshold for switching to SpreadCycle
     driver->SGTHRS(0);                    // Set stallGuard threshold
 
     // Disable interpolation for maximum speed
@@ -332,7 +385,8 @@ bool HighFrequencyStepper::moveToPosition(uint8_t index, int32_t position, doubl
             vTaskDelay(10); // Yield to other tasks
             currentError = abs(getPosition(index) - position);
             // Timeout check            
-            if (loopCounter % 10 == 0) {
+            if (loopCounter % 100 == 0) {
+                //Serial.printf("Current TSTEP: %d\n", tmc2240Drivers[index]->TSTEP());
                 //pwmSteppers[index]->update();
                 //Serial.printf("Stepper %d moving... Current: %d, Target: %d\n", index, getPosition(index), position);
                 //pwmSteppers[index]->printStatus();
@@ -396,7 +450,9 @@ bool HighFrequencyStepper::accelerateToFrequency(uint8_t index, double frequency
             vTaskDelay(10); // Yield to other tasks
             currentError = abs(pwmSteppers[index]->getFrequency() - frequency);
             // Timeout check            
-            if (loopCounter % 10 == 0) {
+            if (loopCounter % 100 == 0) {
+                //Serial.printf("Current TSTEP: %d, Temp: %f\n", tmc2240Drivers[index]->TSTEP(), tmc2240Drivers[index]->get_chip_temperature());
+                //tmc2209Drivers[index]->TSTEP();
                 //Serial.printf("Stepper %d moving... Current: %d, Target: %d\n", index, getPosition(index), position);
                 //pwmSteppers[index]->printStatus();
             }
@@ -679,6 +735,18 @@ bool HighFrequencyStepper::selfTest(uint8_t index) {
         } else {
             Serial.printf("TMC Driver Version: 0x%08X\n", tmc2209Drivers[index]->version());
         }
+    } else if (tmc2240Drivers[index]) {
+        enableStepper(index);
+        //tmc2240Drivers[index]->en_pwm_mode(1);
+        Serial.printf("Test connection: %d\n", tmc2240Drivers[index]->test_connection());
+        Serial.printf("TMC2240 Driver Version: 0x enabled %s\n", tmc2240Drivers[index]->isEnabled() ? "YES" : "NO");
+        // Serial.printf("TMC2240 Driver PINS:\n   DRV_ENN: %s\n   DIR: %s\n   STEP: %s\n  UART ENN: %s\n",
+        //               tmc2240Drivers[index]->drv_enn() == configs[index].enablePin ? "HIGH" : "LOW",
+        //               tmc2240Drivers[index]->dir() == configs[index].dirPin ? "HIGH" : "LOW",
+        //               tmc2240Drivers[index]->step() == configs[index].stepPin ? "HIGH" : "LOW",
+        //               tmc2240Drivers[index]->uart_en() == configs[index].driverSettings.spiConfig.pinCS ? "HIGH" : "LOW");
+        // disableStepper(index); // Disable after test
+        // Serial.printf("TMC2240 Driver DRV_ENN: %s\n", tmc2240Drivers[index]->drv_enn() ? "YES" : "NO");
     } else {
         Serial.println("WARN: No TMC driver instance");
     }
@@ -846,7 +914,7 @@ uint16_t HighFrequencyStepper::getRMSCurrent(uint8_t index) const {
 
 float HighFrequencyStepper::getRSense(uint8_t index) const {
     if (!validateStepperIndex(index)) return 0;
-    return configs[index].rSense;
+    return configs[index].driverSettings.uartConfig.rSense;
 }
 
 HardwareSerial* HighFrequencyStepper::getUART(uint8_t index) const {
@@ -856,6 +924,6 @@ HardwareSerial* HighFrequencyStepper::getUART(uint8_t index) const {
 
 uint8_t HighFrequencyStepper::getDriverAddress(uint8_t index) const {
     if (!validateStepperIndex(index)) return 0;
-    return configs[index].driverAddress;
+    return configs[index].driverSettings.uartConfig.driverAddress;
 }
 

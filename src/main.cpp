@@ -22,6 +22,7 @@
 #include "test/DemoTests.h"
 #include "test/AngleTests.h"
 #include "test/MaxSpeedTest.h"
+#include <SPI.h>
 
 // Pin definitions
 #define EN_PIN           23          // Enable - PURPLE
@@ -79,7 +80,7 @@ enum TestOption {
 void setup() {
     Serial.begin(115200);
     Serial1.begin(115200, SERIAL_8N1, /*RX=*/18, /*TX=*/17);
-    delay(2000);
+    delay(5000);
     
     Serial.println("=== HighFrequencyStepper Example ===");
     
@@ -162,26 +163,53 @@ void setup() {
 
     StepperConfig configEncTMC2209;
     configEncTMC2209.name = "TMC2209+Encoder";
-    configEncTMC2209.stepPin = 4;           // Step pin
-    configEncTMC2209.dirPin = 5;            // Direction pin
-    configEncTMC2209.enablePin = 19;         // Enable pin
+    configEncTMC2209.stepPin = 2; //48; //2;           // Step pin
+    configEncTMC2209.dirPin = 42;//47; //42;            // Direction pin
+    configEncTMC2209.enablePin = 1;         // Enable pin
     configEncTMC2209.stepperEnabledHigh = false; // Active HIGH
     configEncTMC2209.invertDirection = true; // Reverse counting
-    configEncTMC2209.encoderAPin = 6;      // Encoder A pin
-    configEncTMC2209.encoderBPin = 7;      // Encoder B pin
-    configEncTMC2209.encoderZPin = 27;      // Encoder Z pin
+    configEncTMC2209.encoderAPin = 38;      // Encoder A pin
+    configEncTMC2209.encoderBPin = 40;      // Encoder B pin
+    configEncTMC2209.encoderZPin = 41;      // Encoder Z pin
     configEncTMC2209.encoderAttachMode = 4;       // Default to Full Quad
     configEncTMC2209.encoderResolution = 1000;    // Not really encoder. Just connect output STEP pin to input CNT and count steps (200 steps/rev * 256 microsteps)
     configEncTMC2209.driverSettings.driverType = TMC2209_DRIVER;
     configEncTMC2209.driverSettings.uartConfig.uart = &Serial1;             // UART for TMC
-    configEncTMC2209.driverSettings.uartConfig.driverAddress = 0b00;   // TMC220 9 address
+    configEncTMC2209.driverSettings.uartConfig.driverAddress = 0b00; // 0b11;   // TMC220 9 address
     configEncTMC2209.driverSettings.uartConfig.rSense = 0.11f;         // Current sense resistor
     configEncTMC2209.microsteps = 64;        // microsteps
     configEncTMC2209.rmsCurrent = 800;       // RMS current (mA)
     configEncTMC2209.stepsPerRev = 200;      // 200 steps per revolution
     configEncTMC2209.maxRPM = 2500;  // Max rotation speed
-    configEncTMC2209.ledcChannel = 1;        // LEDC channel
+    configEncTMC2209.ledcChannel = 0;        // LEDC channel
     configEncTMC2209.acceleration = 15000.0;          // Different acceleration
+
+    StepperConfig configTMC2240;
+    configTMC2240.name = "TMC2240+Encoder";
+    configTMC2240.stepPin = 5;           // Step pin
+    configTMC2240.dirPin = 9;            // Direction pin
+    configTMC2240.enablePin = 14;         // Enable pin
+    configTMC2240.stepperEnabledHigh = false; // Active HIGH
+    configTMC2240.invertDirection = false; // Reverse counting
+    configTMC2240.encoderAPin = 6;      // Encoder A pin
+    configTMC2240.encoderBPin = 7;      // Encoder B pin
+    configTMC2240.encoderZPin = 27;      // Encoder Z pin
+    configTMC2240.encoderAttachMode = 4;       // Default to Full Quad
+    configTMC2240.encoderResolution = 1000;    // Not really encoder. Just connect output STEP pin to input CNT and count steps (200 steps/rev * 256 microsteps)
+    configTMC2240.driverSettings.driverType = TMC2240_DRIVER;
+    configTMC2240.driverSettings.spiConfig.pinCS = 10; // Chip select pin
+    configTMC2240.driverSettings.spiConfig.pinMOSI = 11; // MOSI pin
+    configTMC2240.driverSettings.spiConfig.pinMISO = 13; // MISO pin
+    configTMC2240.driverSettings.spiConfig.pinSCK = 12;  // SCK pin
+    configTMC2240.driverSettings.spiConfig.link_index = 0; // Link index
+    configTMC2240.microsteps = 64;        // microsteps
+    configTMC2240.rmsCurrent = 2000;       // RMS current (mA)
+    configTMC2240.stepsPerRev = 200;      // 200 steps per revolution
+    configTMC2240.maxRPM = 2500;  // Max rotation speed
+    configTMC2240.ledcChannel = 1;        // LEDC channel
+    configTMC2240.acceleration = 15000.0;          // Different acceleration
+
+
 
     // Add steppers to controller
     // if (!stepperController.addStepper(TMC2209, configTMC2209)) {
@@ -190,9 +218,13 @@ void setup() {
     // }
 
     if (!stepperController.addStepper(0, configEncTMC2209)) {
-        Serial.println("Failed to add stepper 1");
+        Serial.println("Failed to add stepper 0");
         return;
     }
+    // if (!stepperController.addStepper(1, configTMC2240)) {
+    //     Serial.println("Failed to add stepper 1");
+    //     return;
+    // }
 
     // if (!stepperController.addStepper(1, nema17_enc)) {
     //     Serial.println("Failed to add stepper 2");
@@ -358,8 +390,8 @@ void processSerialInput() {
 
             case TEST_MAX_SPEED:
                 clearTestResults();
-                optimizeForMaxSpeed(stepperController, 0); // Optimize stepper 0 for max speed
-                //testMaxSpeed(stepperController);
+                //optimizeForMaxSpeed(stepperController, 0); // Optimize stepper 0 for max speed
+                testMaxSpeed(stepperController);
                 printTestSummary();
                 break;
 

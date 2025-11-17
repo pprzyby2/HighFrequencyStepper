@@ -1,0 +1,100 @@
+// LED Status Indicator Example Usage
+// Demonstrates how to use the LEDStatusIndicator class
+
+#include "LEDStatusIndicator.h"
+#include "HighFrequencyStepper.h"
+
+/*
+ * LED Status Color Mapping:
+ * - GREEN (LED_IDLE): System idle, motors enabled and ready
+ * - BLUE (LED_MOVING): Motor(s) actively moving
+ * - RED (LED_ERROR): Error detected (initialization failure, invalid commands)
+ * - YELLOW (LED_STALL): Stall detected via StallGuard
+ * - CYAN (LED_INITIALIZING): System initializing
+ * - ORANGE (LED_DISABLED): Motor(s) disabled
+ * - MAGENTA (LED_WARNING): Warning condition
+ * - OFF (LED_OFF): LED turned off
+ */
+
+// Basic Usage Examples:
+
+// 1. Initialize the LED
+LEDStatusIndicator led(48, 50);  // Pin 48, brightness 50
+led.begin();
+
+// 2. Set status manually
+led.setStatus(LED_IDLE);      // Green - ready
+led.setStatus(LED_MOVING);    // Blue - moving
+led.setStatus(LED_ERROR);     // Red - error
+led.setStatus(LED_STALL);     // Yellow - stall detected
+
+// 3. Automatic status from stepper controller
+// In loop():
+led.updateFromAllSteppers(stepperController);  // Updates based on all steppers
+// or for a specific stepper:
+led.updateFromStepper(stepperController, 0);   // Only monitor stepper 0
+
+// 4. Custom RGB colors
+led.setRGB(255, 128, 0);      // Custom orange color
+
+// 5. Rainbow effect
+for (int i = 0; i < 256; i++) {
+    led.setRainbow(i);
+    delay(10);
+}
+
+// 6. Blinking effect
+led.enableBlink(500);         // Blink every 500ms
+// Call led.update() in loop() for blink to work
+// led.disableBlink() to stop
+
+// 7. Brightness control
+led.setBrightness(100);       // 0-255 (default 50)
+
+// 8. Test all colors
+led.test();                   // Cycles through all status colors + rainbow
+
+// 9. Turn off
+led.turnOff();                // Same as setStatus(LED_OFF)
+
+/*
+ * Integration Example in main.cpp:
+ * 
+ * // Global declaration
+ * LEDStatusIndicator ledStatus(48, 50);
+ * 
+ * // In setup():
+ * ledStatus.begin();
+ * ledStatus.setStatus(LED_INITIALIZING);
+ * // ... initialize steppers ...
+ * ledStatus.setStatus(LED_IDLE);
+ * 
+ * // In loop():
+ * ledStatus.update();  // For blinking
+ * ledStatus.updateFromAllSteppers(stepperController);  // Auto status
+ * 
+ * // Manual control during specific operations:
+ * void someErrorFunction() {
+ *     ledStatus.setStatus(LED_ERROR);
+ *     ledStatus.enableBlink(250);  // Fast blink for error
+ * }
+ */
+
+/*
+ * Priority System (when using updateFromAllSteppers):
+ * 
+ * HIGHEST: Stall Guard Active (Yellow)
+ *          Any motor stall detected
+ * 
+ *          Motor Moving (Blue)
+ *          Any motor actively moving
+ * 
+ *          Not Initialized (Cyan)
+ *          Any motor not initialized
+ * 
+ *          Disabled (Orange)
+ *          All motors disabled
+ * 
+ * LOWEST:  Idle (Green)
+ *          All motors ready but stationary
+ */

@@ -117,7 +117,7 @@ bool HighFrequencyStepper::addStepper(uint8_t index, const StepperConfig& config
     return true;
 }
 
-void configureDriverForHighSpeed(TMC2209Stepper* driver, uint16_t rmsCurrent, uint16_t microsteps);
+void configureTMC2209Driver(TMC2209Stepper* driver, uint16_t rmsCurrent, uint16_t microsteps);
 
 // Initialize a specific stepper
 bool HighFrequencyStepper::initializeStepper(uint8_t index) {
@@ -143,7 +143,7 @@ bool HighFrequencyStepper::initializeStepper(uint8_t index) {
     // Initialize TMC2209
     if (tmc2209Drivers[index]) {
         tmc2209Drivers[index]->begin();
-        configureDriverForHighSpeed(tmc2209Drivers[index], configs[index].rmsCurrent, configs[index].microsteps);
+        configureTMC2209Driver(tmc2209Drivers[index], configs[index].rmsCurrent, configs[index].microsteps);
     } else if (tmc2240Drivers[index]) {
         TMC2240Stepper *tmc2240Driver = tmc2240Drivers[index];
         while (true) {
@@ -232,24 +232,24 @@ bool HighFrequencyStepper::initializeStepper(uint8_t index) {
     return true;
 }
 
-void configureDriverForHighSpeed(TMC2209Stepper* driver, uint16_t rmsCurrent, uint16_t microsteps) {
+void configureTMC2209Driver(TMC2209Stepper* driver, uint16_t rmsCurrent, uint16_t microsteps) {
     if (!driver) return;
     driver->defaults();
+    driver->rms_current(rmsCurrent);
+    driver->microsteps(microsteps);
 
     // High-speed optimized settings:
     driver->toff(5);                      // Enable with balanced chopper freq (~37 kHz)
     driver->blank_time(24);               // Standard blank time
-    driver->rms_current(rmsCurrent);
-    driver->microsteps(microsteps);
 
     // SpreadCycle for high speed
-    driver->en_spreadCycle(true);         // TRUE for high RPM
+    driver->en_spreadCycle(false);         // TRUE for high RPM
     driver->TCOOLTHRS(40);                 // 0 = always use SpreadCycle
     driver->TPWMTHRS(50);                 // Threshold for switching to SpreadCycle
-    driver->SGTHRS(0);                    // Set stallGuard threshold
+    driver->SGTHRS(30);                    // Set stallGuard threshold
 
     // Disable interpolation for maximum speed
-    driver->intpol(false);                // FALSE for high speed
+    driver->intpol(true);                // FALSE for high speed
 
     // High-speed chopper tuning
     driver->hysteresis_start(4);          // HSTRT: 4 is good for high speed

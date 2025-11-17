@@ -13,6 +13,7 @@
 #include "PWMStepper.h"
 #include "HighFrequencyStepper.h"
 #include <TMCStepper.h>
+#include "LEDStatusIndicator.h"
 
 // Include organized test files
 #include "test/TestUtils.h"
@@ -50,6 +51,9 @@
 // HighFrequencyStepper controller
 HighFrequencyStepper stepperController;
 
+// LED Status Indicator (RGB LED on pin 48 for ESP32-S3)
+LEDStatusIndicator ledStatus(48, 50);  // Pin 48, brightness 50/255
+
 // Function declarations
 void printTestMenu();
 void runAllTests();
@@ -74,6 +78,7 @@ enum TestOption {
     TEST_ASYNC_MOVEMENT = 10,
     RUN_ALL_TESTS = 11,
     SHOW_SYSTEM_STATUS = 12,
+    LED_STATUS_TEST = 13,
     RESET_POSITION = 0
 };
 
@@ -163,24 +168,24 @@ void setup() {
 
     StepperConfig configEncTMC2209;
     configEncTMC2209.name = "TMC2209+Encoder";
-    configEncTMC2209.stepPin = 2; //48; //2;           // Step pin
-    configEncTMC2209.dirPin = 42;//47; //42;            // Direction pin
+    configEncTMC2209.stepPin = 48; //2;           // Step pin
+    configEncTMC2209.dirPin = 47; //42;            // Direction pin
     configEncTMC2209.enablePin = 1;         // Enable pin
     configEncTMC2209.stepperEnabledHigh = false; // Active HIGH
     configEncTMC2209.invertDirection = true; // Reverse counting
-    configEncTMC2209.encoderAPin = 38;      // Encoder A pin
-    configEncTMC2209.encoderBPin = 40;      // Encoder B pin
-    configEncTMC2209.encoderZPin = 41;      // Encoder Z pin
+    configEncTMC2209.encoderAPin = 21; //38;      // Encoder A pin
+    configEncTMC2209.encoderBPin = 20; //40;      // Encoder B pin
+    configEncTMC2209.encoderZPin = 19; //41;      // Encoder Z pin
     configEncTMC2209.encoderAttachMode = 4;       // Default to Full Quad
     configEncTMC2209.encoderResolution = 1000;    // Not really encoder. Just connect output STEP pin to input CNT and count steps (200 steps/rev * 256 microsteps)
     configEncTMC2209.driverSettings.driverType = TMC2209_DRIVER;
     configEncTMC2209.driverSettings.uartConfig.uart = &Serial1;             // UART for TMC
-    configEncTMC2209.driverSettings.uartConfig.driverAddress = 0b00; // 0b11;   // TMC220 9 address
+    configEncTMC2209.driverSettings.uartConfig.driverAddress = 0b11; //0b00; // 0b11;   // TMC220 9 address
     configEncTMC2209.driverSettings.uartConfig.rSense = 0.11f;         // Current sense resistor
     configEncTMC2209.microsteps = 64;        // microsteps
     configEncTMC2209.rmsCurrent = 800;       // RMS current (mA)
     configEncTMC2209.stepsPerRev = 200;      // 200 steps per revolution
-    configEncTMC2209.maxRPM = 2500;  // Max rotation speed
+    configEncTMC2209.maxRPM = 300;  // Max rotation speed
     configEncTMC2209.ledcChannel = 0;        // LEDC channel
     configEncTMC2209.acceleration = 15000.0;          // Different acceleration
 
@@ -241,11 +246,25 @@ void setup() {
     // Enable all steppers
     stepperController.enableAll();
     
+    // Initialize LED Status Indicator
+    Serial.println("\n=== Initializing LED Status Indicator ===");
+    if (!ledStatus.begin()) {
+        Serial.println("WARNING: LED Status Indicator failed to initialize");
+    } else {
+        Serial.println("LED Status Indicator ready");
+        ledStatus.setStatus(LED_INITIALIZING);
+        delay(1000);
+        ledStatus.test(); // Run LED test sequence
+    }
+    
     // Print initial status
     stepperController.printAllStatus();
     
     // Perform self-test
     stepperController.selfTestAll();
+    
+    // Set initial LED status to idle
+    ledStatus.setStatus(LED_IDLE);
 }
 
 void printTestMenu() {
@@ -262,6 +281,7 @@ void printTestMenu() {
     Serial.println("10. Asynchronous Movement Test");
     Serial.println("11. Run ALL Tests");
     Serial.println("12. Show System Status");
+    Serial.println("13. LED Status Test");
     Serial.println("0. Reset Position Counter");
     Serial.println("\nEnter test number (or 'h' for help): ");
 }
@@ -375,6 +395,13 @@ void processSerialInput() {
                 printSystemStatus(stepperController);
                 break;
                 
+            case LED_STATUS_TEST:
+                Serial.println("\n=== Running LED Status Test ===");
+                ledStatus.test();
+                Serial.println("LED Status Test Complete");
+                ledStatus.setStatus(LED_IDLE);
+                break;
+                
             case RESET_POSITION:
                 for (int i = 0; i < stepperController.getStepperCount(); i++) {
                     stepperController.setPosition(i, 0);
@@ -411,6 +438,16 @@ void processSerialInput() {
 }
 
 void loop() {
+    // Update LED status indicator (for blinking effects)
+    ledStatus.update();
+    
+    // Update LED based on stepper status
+    static unsigned long lastLEDUpdate = 0;
+    if (millis() - lastLEDUpdate > 100) { // Update every 100ms
+        ledStatus.updateFromAllSteppers(stepperController);
+        lastLEDUpdate = millis();
+    }
+    
     processSerialInput();
     
     // Optional: periodic status updates

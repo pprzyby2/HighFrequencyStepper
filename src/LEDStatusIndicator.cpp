@@ -36,19 +36,19 @@ bool LEDStatusIndicator::begin() {
 LEDStatusIndicator::Color LEDStatusIndicator::getColorForStatus(LEDStatus status) {
     switch (status) {
         case LED_IDLE:
-            return Color(0, 255, 0);      // Green
+            return Color(0, 127, 0);      // Green (max 255 brightness)
         case LED_MOVING:
-            return Color(0, 0, 255);      // Blue
+            return Color(0, 0, 127);      // Blue
         case LED_ERROR:
-            return Color(255, 0, 0);      // Red
+            return Color(127, 0, 0);      // Red
         case LED_STALL:
-            return Color(255, 255, 0);    // Yellow
+            return Color(127, 127, 0);    // Yellow
         case LED_INITIALIZING:
-            return Color(0, 255, 255);    // Cyan
+            return Color(0, 127, 127);    // Cyan
         case LED_DISABLED:
-            return Color(255, 165, 0);    // Orange
+            return Color(127, 83, 0);    // Orange
         case LED_WARNING:
-            return Color(255, 0, 255);    // Magenta
+            return Color(127, 0, 127);    // Magenta
         case LED_OFF:
         default:
             return Color(0, 0, 0);        // Black (off)

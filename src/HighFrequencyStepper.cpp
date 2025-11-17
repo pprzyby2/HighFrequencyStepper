@@ -237,30 +237,31 @@ void configureTMC2209Driver(TMC2209Stepper* driver, uint16_t rmsCurrent, uint16_
     driver->defaults();
     driver->rms_current(rmsCurrent);
     driver->microsteps(microsteps);
+    driver->VACTUAL(0);
 
-    // High-speed optimized settings:
-    driver->toff(5);                      // Enable with balanced chopper freq (~37 kHz)
-    driver->blank_time(24);               // Standard blank time
+    // // High-speed optimized settings:
+    // driver->toff(5);                      // Enable with balanced chopper freq (~37 kHz)
+    // driver->blank_time(24);               // Standard blank time
 
-    // SpreadCycle for high speed
-    driver->en_spreadCycle(false);         // TRUE for high RPM
-    driver->TCOOLTHRS(40);                 // 0 = always use SpreadCycle
-    driver->TPWMTHRS(50);                 // Threshold for switching to SpreadCycle
-    driver->SGTHRS(30);                    // Set stallGuard threshold
+    // // SpreadCycle for high speed
+    // driver->en_spreadCycle(false);         // TRUE for high RPM
+    // driver->TCOOLTHRS(40);                 // 0 = always use SpreadCycle
+    // driver->TPWMTHRS(50);                 // Threshold for switching to SpreadCycle
+    // driver->SGTHRS(30);                    // Set stallGuard threshold
 
-    // Disable interpolation for maximum speed
-    driver->intpol(true);                // FALSE for high speed
+    // // Disable interpolation for maximum speed
+    // driver->intpol(true);                // FALSE for high speed
 
-    // High-speed chopper tuning
-    driver->hysteresis_start(4);          // HSTRT: 4 is good for high speed
-    driver->hysteresis_end(0);            // HEND: 0 for fast decay
-    driver->semin(0);                     // Disable coolStep for max speed
+    // // High-speed chopper tuning
+    // driver->hysteresis_start(4);          // HSTRT: 4 is good for high speed
+    // driver->hysteresis_end(0);            // HEND: 0 for fast decay
+    // driver->semin(0);                     // Disable coolStep for max speed
 
-    // Current control - FIXED METHOD NAMES:
-    driver->pwm_autoscale(true);         // 
-    driver->irun(31);                     // Run current = 100% of rms_current
-    driver->hold_multiplier(16);          // Hold current = ~50% of run current
-    driver->iholddelay(5);                // Delay before reducing to hold: 5 * 2^18 clocks
+    // // Current control - FIXED METHOD NAMES:
+    // driver->pwm_autoscale(true);         // 
+    // driver->irun(31);                     // Run current = 100% of rms_current
+    // driver->hold_multiplier(16);          // Hold current = ~50% of run current
+    // driver->iholddelay(5);                // Delay before reducing to hold: 5 * 2^18 clocks
 }
 
 // Initialize all steppers
@@ -707,6 +708,7 @@ bool HighFrequencyStepper::isStallDetected(uint8_t index) {
     
     // Check TMC StallGuard status
     if (!tmc2209Drivers[index]) return false;
+    return false;
     uint32_t drv_status = tmc2209Drivers[index]->DRV_STATUS();
     return (drv_status & 0x1000000) != 0; // StallGuard flag
 }
@@ -878,6 +880,12 @@ bool HighFrequencyStepper::setSpreadCycle(uint8_t index, bool enable) {
     if (!tmc2209Drivers[index]) return false;
     tmc2209Drivers[index]->en_spreadCycle(enable);
     return true;
+}
+
+bool HighFrequencyStepper::isSpreadCycleEnabled(uint8_t index) const {
+    if (!validateStepperIndex(index)) return false;
+    if (!tmc2209Drivers[index]) return false;
+    return tmc2209Drivers[index]->en_spreadCycle();
 }
 
 bool HighFrequencyStepper::setHybridThreshold(uint8_t index, uint8_t threshold) {

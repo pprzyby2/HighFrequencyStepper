@@ -179,6 +179,7 @@ public:
     bool setMicrosteps(uint8_t index, uint16_t microsteps);
     bool setRMSCurrent(uint8_t index, uint16_t currentMA);
     bool setSpreadCycle(uint8_t index, bool enable);
+    bool isSpreadCycleEnabled(uint8_t index) const;
     bool setHybridThreshold(uint8_t index, uint8_t threshold);
     bool setCoolStep(uint8_t index, uint16_t value);
     bool setStallGuardThreshold(uint8_t index, uint16_t threshold);

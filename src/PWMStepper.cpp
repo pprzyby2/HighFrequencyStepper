@@ -126,7 +126,7 @@ void ARDUINO_ISR_ATTR PWMStepper::update() {
     positionHistory[updateNumber % MAX_POSITION_HISTORY] = currentPosition;
     updateTimes[updateNumber % MAX_POSITION_HISTORY] = currentTime;
 
-    if (mode == MODE_TIMER && currentFreq > 0) {
+    if (state != STEPPER_IDLE && state != STEPPER_OFF && mode == MODE_TIMER && currentFreq > 0) {
         uint64_t microsSinceLastSpeedChange = currentTime - lastSpeedChangeMicros;
         double expectedMicrostepPeriod = 1000000.0 / abs(currentFreq * 2); // Period in microseconds
         uint64_t expectedNumberOfSteps = (uint64_t) (double(microsSinceLastSpeedChange) / expectedMicrostepPeriod);

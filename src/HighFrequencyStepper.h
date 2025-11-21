@@ -38,68 +38,44 @@ struct StepperDriverSettings {
     SPIConfig spiConfig;     // SPI configuration (for TMC2240)
 };
 
+struct EncoderSettings {
+    uint8_t pinA;    // Pin for pulse counting (can be same as stepPin)
+    uint8_t pinB;    // Pin for pulse counting (can be same as stepPin)
+    uint8_t pinZ;    // Pin for encoder zero pin (not used in current implementation)
+    uint8_t attachMode; // Mode for attaching encoder (1 - Single edge, 2- HalfQuad, 4 - FullQuad)
+    uint32_t resolution; // Resolution of the encoder (counts per revolution)
+};
+
 // Configuration structure for each stepper
 struct StepperConfig {
-    // Pin assignments
+    String name;               // Name identifier for the stepper
+
+    // Stepper pin assignments
     uint8_t stepPin;
     uint8_t dirPin;
     uint8_t enablePin;
+    bool invertDirection;    // Invert direction pin logic
     bool stepperEnabledHigh; // true if enable pin is active HIGH
-    uint8_t encoderAPin;    // Pin for pulse counting (can be same as stepPin)
-    uint8_t encoderBPin;    // Pin for pulse counting (can be same as stepPin)
-    uint8_t encoderZPin;    // Pin for encoder zero pin (not used in current implementation)
-    uint8_t encoderAttachMode; // Mode for attaching encoder (1 - Single edge, 2- HalfQuad, 4 - FullQuad)
-    uint32_t encoderResolution; // Resolution of the encoder (counts per revolution)
-    float encoderToMicrostepRatio; // Ratio of encoder counts to microsteps
 
-    // TMC2209 configuration
+    // Encoder configuration (for position feedback): ESP32Encoder
+    EncoderSettings encoderSettings;
 
+    // Driver configuration (TMC2209 UART/TMC2240 SPI)
     StepperDriverSettings driverSettings;
     
     // Motor parameters
+    uint16_t stepsPerRev;    // Steps per revolution (typically 200 for 1.8° motors)
     uint16_t microsteps;     // Microsteps per full step (1, 2, 4, 8, 16, 32, 64, 128, 256)
     uint16_t rmsCurrent;     // RMS current in mA
-    uint16_t stepsPerRev;    // Steps per revolution (typically 200 for 1.8° motors)
     
     // PWM/Movement parameters
     double maxRPM;     // Maximum frequency in Hz
-    double acceleration;     // Acceleration in steps/s²
-    bool invertDirection;    // Invert direction pin logic
+    double rpsAcceleration;     // Acceleration in rotations per second squared
     
     // LEDC configuration
     uint8_t ledcChannel;     // LEDC channel (0-15)
-    String name;               // Name identifier for the stepper
-    
 
-    // Default constructor
-    StepperConfig() {
-        stepPin = 0;
-        dirPin = 0;
-        enablePin = 0;
-        stepperEnabledHigh = false;
-        encoderAPin = 0;
-        encoderBPin = 0;
-        encoderAttachMode = 1; // Default to Single edge
-        encoderToMicrostepRatio = 1; // Default 1:1
-        encoderResolution = 1000; // Default 1000 CPR
-        driverSettings.driverType = STEP_DIR_ONLY;
-        driverSettings.uartConfig.uart = nullptr;
-        driverSettings.uartConfig.driverAddress = 0;
-        driverSettings.uartConfig.rSense = 0.11f;
-        driverSettings.spiConfig.pinCS = 0;
-        driverSettings.spiConfig.pinMOSI = 0;
-        driverSettings.spiConfig.pinMISO = 0;
-        driverSettings.spiConfig.pinSCK = 0;
-        driverSettings.spiConfig.link_index = 0;
-        microsteps = 16;
-        rmsCurrent = 800;
-        stepsPerRev = 200;
-        maxRPM = 500.0;
-        acceleration = 10000.0;
-        invertDirection = false;
-        ledcChannel = 0;
-        name = "Stepper_unknown";
-    }
+    float encoderToMicrostepRatio; // DONT SET THIS VALUE. It is computed ratio of encoder counts to microsteps    
 };
 
 // Status structure for each stepper
@@ -162,7 +138,7 @@ public:
     
     // Configuration methods
     bool setMaxRPM(uint8_t index, double rpm);
-    bool setAcceleration(uint8_t index, double acceleration);
+    bool setAcceleration(uint8_t index, double rpsAcceleration);
     bool setName(uint8_t index, const String& name);
     String getName(uint8_t index) const;
     uint8_t getStepPin(uint8_t index) const;
@@ -240,6 +216,14 @@ public:
     // Utility methods
     uint8_t getStepperCount() const { return stepperCount; }
     bool isValidIndex(uint8_t index) const { return validateStepperIndex(index); }
+    double rpmToFrequency(uint8_t index, double rpm) const {
+        if (!validateStepperIndex(index)) return 0.0;
+        return (rpm / 60.0) * configs[index].microsteps * configs[index].stepsPerRev;
+    }
+    double frequencyToRPM(uint8_t index, double frequency) const {
+        if (!validateStepperIndex(index)) return 0.0;
+        return (frequency / (configs[index].microsteps * configs[index].stepsPerRev)) * 60.0;
+    }
     
     // Configuration access
     StepperConfig getConfig(uint8_t index) const;

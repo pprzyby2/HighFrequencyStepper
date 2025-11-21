@@ -52,13 +52,20 @@ bool HighFrequencyStepper::addStepper(uint8_t index, const StepperConfig& config
     
     // Create PulseCounter instance
     //pulseCounters[index] = new PulseCounter(config.pcntUnit, config.stepCountPin, config.dirPin);
+
+    ESP32Encoder::useInternalWeakPullResistors = puType::up;
+    pinMode(config.encoderSettings.pinA, INPUT_PULLUP);
+    pinMode(config.encoderSettings.pinB, INPUT_PULLUP);
+    pinMode(config.encoderSettings.pinZ, INPUT_PULLUP);
+    
     pulseCounters[index] = new ESP32Encoder();
-    if (config.encoderAttachMode == 1) {
-        pulseCounters[index]->attachSingleEdge(config.encoderAPin, config.encoderBPin);
-    } else if (config.encoderAttachMode == 2) {
-        pulseCounters[index]->attachHalfQuad(config.encoderAPin, config.encoderBPin);
-    } else if (config.encoderAttachMode == 4) {
-        pulseCounters[index]->attachFullQuad(config.encoderAPin, config.encoderBPin);
+    pulseCounters[index]->setFilter(1023);
+    if (config.encoderSettings.attachMode == 1) {
+        pulseCounters[index]->attachSingleEdge(config.encoderSettings.pinA, config.encoderSettings.pinB);
+    } else if (config.encoderSettings.attachMode == 2) {
+        pulseCounters[index]->attachHalfQuad(config.encoderSettings.pinA, config.encoderSettings.pinB);
+    } else if (config.encoderSettings.attachMode == 4) {
+        pulseCounters[index]->attachFullQuad(config.encoderSettings.pinA, config.encoderSettings.pinB);
     } else {
         Serial.println("ERROR: Invalid encoder attach mode");
         delete pulseCounters[index];
@@ -71,9 +78,8 @@ bool HighFrequencyStepper::addStepper(uint8_t index, const StepperConfig& config
         pwmSteppers[index] = nullptr;
         return false;
     }
-    configs[index].encoderToMicrostepRatio = float(config.stepsPerRev * config.microsteps) / float(config.encoderResolution * config.encoderAttachMode);
-    pinMode(config.encoderZPin, INPUT_PULLUP);
-    attachInterrupt(digitalPinToInterrupt(config.encoderZPin), []() {
+    configs[index].encoderToMicrostepRatio = float(config.stepsPerRev * config.microsteps) / float(config.encoderSettings.resolution * config.encoderSettings.attachMode);
+        attachInterrupt(digitalPinToInterrupt(config.encoderSettings.pinZ), []() {
         // Handle Z pin interrupt (e.g., reset position)
     }, RISING);
 
@@ -131,8 +137,9 @@ bool HighFrequencyStepper::initializeStepper(uint8_t index) {
     
     // Initialize PWMStepper
     double maxFreq = (configs[index].maxRPM / 60.0) * configs[index].microsteps * configs[index].stepsPerRev; // Convert RPM to Hz 
+    double acceleration = rpmToFrequency(index, 60.0 * configs[index].rpsAcceleration); // Convert RPS^2 to steps/s^2
     pwmSteppers[index]->setMaxFreq(maxFreq);
-    pwmSteppers[index]->setAcceleration(configs[index].acceleration);
+    pwmSteppers[index]->setAcceleration(acceleration);
     pwmSteppers[index]->setInvertDirection(configs[index].invertDirection);
     pwmSteppers[index]->setStepperEnabledHigh(configs[index].stepperEnabledHigh);
     pwmSteppers[index]->setTargetFrequency(0);
@@ -291,12 +298,12 @@ bool HighFrequencyStepper::setMaxRPM(uint8_t index, double rpm) {
     return true;
 }
 
-bool HighFrequencyStepper::setAcceleration(uint8_t index, double acceleration) {
+bool HighFrequencyStepper::setAcceleration(uint8_t index, double rpsAcceleration) {
     if (!validateStepperIndex(index)) return false;
     
-    configs[index].acceleration = acceleration;
+    configs[index].rpsAcceleration = rpsAcceleration;
 
-    Serial.printf("Stepper %d acceleration set to %.2f Hz/s\n", index, acceleration);
+    Serial.printf("Stepper %d acceleration set to %.2f RPS^2\n", index, rpsAcceleration);
 
     return true;
 }
@@ -329,7 +336,7 @@ uint8_t HighFrequencyStepper::getEnablePin(uint8_t index) const {
 
 uint8_t HighFrequencyStepper::getStepCountPin(uint8_t index) const {
     if (!validateStepperIndex(index)) return 255;
-    return configs[index].encoderAPin;
+    return configs[index].encoderSettings.pinA;
 }
 
 uint16_t HighFrequencyStepper::getMicrostepsPerRevolution(uint8_t index) const {
@@ -349,7 +356,7 @@ double HighFrequencyStepper::getMaxRPM(uint8_t index) const {
 
 double HighFrequencyStepper::getAcceleration(uint8_t index) const {
     if (!validateStepperIndex(index)) return 0;
-    return configs[index].acceleration;
+    return configs[index].rpsAcceleration;
 }
 
 bool HighFrequencyStepper::getInvertDirection(uint8_t index) const {
@@ -438,6 +445,8 @@ bool HighFrequencyStepper::accelerateToFrequency(uint8_t index, double frequency
         direction = !direction;
     }
     pwmSteppers[index]->setDirection(direction);
+    //tmc2209Drivers[index]->VACTUAL((1.0/0.72)*frequency * (direction ? -1 : 1));
+
     pwmSteppers[index]->accelerateToFrequency(frequency);
     
     if (waitForCompletion) {
@@ -854,7 +863,7 @@ bool HighFrequencyStepper::setMicrosteps(uint8_t index, uint16_t microsteps) {
     // Adjust max frequency accordingly
     double maxFreq = (configs[index].maxRPM / 60.0) * configs[index].microsteps * configs[index].stepsPerRev; // Convert RPM to Hz 
     pwmSteppers[index]->setMaxFreq(maxFreq);    
-    configs[index].encoderToMicrostepRatio = float(configs[index].stepsPerRev * configs[index].microsteps) / float(configs[index].encoderResolution * configs[index].encoderAttachMode);
+    configs[index].encoderToMicrostepRatio = float(configs[index].stepsPerRev * configs[index].microsteps) / float(configs[index].encoderSettings.resolution * configs[index].encoderSettings.attachMode);
     if (!tmc2209Drivers[index]) {
         return false;
     } else {

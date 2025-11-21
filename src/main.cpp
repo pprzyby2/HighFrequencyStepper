@@ -96,153 +96,66 @@ void setup() {
     
     Serial.println("=== HighFrequencyStepper Example ===");
     
-    // Configuration for Stepper 0
-    StepperConfig configTMC2209;
-    configTMC2209.stepPin = STEP_PIN;           // Step pin
-    configTMC2209.dirPin = DIR_PIN;            // Direction pin
-    configTMC2209.enablePin = EN_PIN;         // Enable pin
-    configTMC2209.invertDirection = true; // Reverse counting
-    configTMC2209.encoderAPin = STEP_CNT_PIN;      // Pulse counter pin
-    configTMC2209.encoderBPin = DIR_PIN;      // Pulse counter pin
-    configTMC2209.encoderAttachMode = 1;       // Default to Full Quad
-    configTMC2209.encoderResolution = 200 * 256;    // Not really encoder. Just connect output STEP pin to input CNT and count steps (200 steps/rev * 256 microsteps)
-    configTMC2209.driverSettings.driverType = TMC2209_DRIVER;
-    configTMC2209.driverSettings.uartConfig.uart = &Serial2;             // UART for TMC
-    configTMC2209.driverSettings.uartConfig.driverAddress = 0b00;   // TMC220 9 address
-    configTMC2209.driverSettings.uartConfig.rSense = 0.11f;         // Current sense resistor
-    configTMC2209.microsteps = 256;        // 256 microsteps
-    configTMC2209.rmsCurrent = 800;       // 800mA RMS current
-    configTMC2209.stepsPerRev = 200;      // 200 steps per revolution
-    configTMC2209.maxRPM = 360;  // 360 RPM max frequency
-    configTMC2209.ledcChannel = 0;        // LEDC channel 0
-    configTMC2209.name = "TMC2209";
+    StepperConfig configEncTMC2209 = {
+        .name = String("TMC2209+Encoder I"),
+        .stepPin = 45, //2;           // Step pin
+        .dirPin = 47, //42;            // Direction pin
+        .enablePin = 1,         // Enable pin
+        .invertDirection = true, // Reverse counting
+        .stepperEnabledHigh = false, // Active HIGH
+        .encoderSettings = {
+            .pinA = 21, //38;      // Encoder A pin
+            .pinB = 20, //40;      // Encoder B pin
+            .pinZ = 19, //41;      // Encoder Z pin
+            .attachMode = 4,       // Default to Full Quad
+            .resolution = 1000    // Not really encoder. Just connect output STEP pin to input CNT and count steps (200 steps/rev * 256 microsteps)
+        },
+        .driverSettings = {
+            .driverType = TMC2209_DRIVER, //STEP_DIR_ONLY;
+            .uartConfig = {
+                .uart = &Serial1,             // UART for TMC
+                .driverAddress = 0b00, // TMC220 9 address
+                .rSense = 0.11f         // Current sense resistor
+            }
+        },
+        .stepsPerRev = 200,      // 200 steps per revolution
+        .microsteps = 64,        // microsteps
+        .rmsCurrent = 800,       // RMS current (mA)
+        .maxRPM = 300,  // Max rotation speed
+        .rpsAcceleration = 5.0,
+        .ledcChannel = 0        // LEDC channel        
+    };
 
-    // Configuration for Stepper 1 (example second stepper)
-    StepperConfig configN23;
-    configN23.stepPin = N23_STEP_PIN;           // Different step pin
-    configN23.dirPin = N23_DIR_PIN;             // Different direction pin
-    configN23.enablePin = N23_EN_PIN;         // Can share enable pin
-    configN23.stepperEnabledHigh = true;       // Active HIGH
-    configN23.encoderAPin = N23_CNT_A_PIN;       // Different pulse counter pin
-    configN23.encoderBPin = N23_CNT_B_PIN;       // Different pulse counter pin
-    configN23.encoderAttachMode = 4;           // Default to Full Quad
-    configN23.encoderResolution = 200;         // Default 200 CPR
-    configN23.invertDirection = false;           // Reverse counting
-    configN23.driverSettings.driverType = DriverType::STEP_DIR_ONLY;
-    configN23.microsteps = 32;        // Different microsteps
-    configN23.stepsPerRev = 200;
-    configN23.maxRPM = 360;  // 360 RPM max frequency
-    configN23.acceleration = 10000.0;          // Different acceleration
-    configN23.ledcChannel = 1;        // Different LEDC channel
-    configN23.name = "NEMA23+Encoder";
 
-    /* StepperConfig configN23_2;
-    configN23_2.stepPin = N23_2_STEP_PIN;           // Different step pin
-    configN23_2.dirPin = N23_2_DIR_PIN;             // Different direction pin
-    configN23_2.enablePin = N23_2_EN_PIN;         // Can share enable pin
-    configN23_2.stepperEnabledHigh = true;       // Active HIGH
-    configN23_2.encoderAPin = N23_2_CNT_A_PIN;       // Different pulse counter pin
-    configN23_2.encoderBPin = N23_2_CNT_B_PIN;       // Different pulse counter pin
-    configN23_2.encoderAttachMode = 4;           // Default to Full Quad
-    configN23_2.encoderToMicrostepRatio = 8;     // 8:1 ratio for N23
-    configN23_2.encoderResolution = 200;    // 200 counts per revolution
-    configN23_2.invertDirection = false;           // Reverse counting
-    configN23_2.uart = NULL;                   // The same UART for TMC
-    configN23_2.microsteps = 32;        // Different microsteps
-    configN23_2.stepsPerRev = 200;
-    configN23_2.maxRPM = 360;  // 360 RPM max frequency
-    configN23_2.acceleration = 10000.0;          // Different acceleration
-    configN23_2.ledcChannel = 2;        // Different LEDC channel
-    configN23_2.name = "N23_2_stepper";*/
-
-    StepperConfig nema17_enc;
-    nema17_enc.name = "NEMA17+Encoder";
-    nema17_enc.stepPin = N23_2_STEP_PIN;           // Different step pin
-    nema17_enc.dirPin = N23_2_DIR_PIN;             // Different direction pin
-    nema17_enc.invertDirection = true;           // Reverse counting
-    nema17_enc.enablePin = N23_2_EN_PIN;         // Can share enable pin
-    nema17_enc.stepperEnabledHigh = true;       // Active HIGH
-    nema17_enc.encoderAPin = N23_2_CNT_A_PIN;       // Different pulse counter pin
-    nema17_enc.encoderBPin = N23_2_CNT_B_PIN;       // Different pulse counter pin
-    nema17_enc.encoderAttachMode = 4;           // Default to Full Quad
-    nema17_enc.encoderResolution = 1000;         // Default 1000 CPR
-    nema17_enc.driverSettings.driverType = DriverType::STEP_DIR_ONLY;
-    nema17_enc.microsteps = 32;        // Different microsteps
-    nema17_enc.stepsPerRev = 200;
-    nema17_enc.maxRPM = 2000;  // 2000 RPM max frequency
-    nema17_enc.acceleration = 10000.0;          // Different acceleration
-    nema17_enc.ledcChannel = 2;        // Different LEDC channel
-
-    StepperConfig configTMC2240;
-    configTMC2240.name = "TMC2240+Encoder";
-    configTMC2240.stepPin = 5;           // Step pin
-    configTMC2240.dirPin = 9;            // Direction pin
-    configTMC2240.enablePin = 14;         // Enable pin
-    configTMC2240.stepperEnabledHigh = false; // Active HIGH
-    configTMC2240.invertDirection = false; // Reverse counting
-    configTMC2240.encoderAPin = 6;      // Encoder A pin
-    configTMC2240.encoderBPin = 7;      // Encoder B pin
-    configTMC2240.encoderZPin = 27;      // Encoder Z pin
-    configTMC2240.encoderAttachMode = 4;       // Default to Full Quad
-    configTMC2240.encoderResolution = 1000;    // Not really encoder. Just connect output STEP pin to input CNT and count steps (200 steps/rev * 256 microsteps)
-    configTMC2240.driverSettings.driverType = TMC2240_DRIVER;
-    configTMC2240.driverSettings.spiConfig.pinCS = 10; // Chip select pin
-    configTMC2240.driverSettings.spiConfig.pinMOSI = 11; // MOSI pin
-    configTMC2240.driverSettings.spiConfig.pinMISO = 13; // MISO pin
-    configTMC2240.driverSettings.spiConfig.pinSCK = 12;  // SCK pin
-    configTMC2240.driverSettings.spiConfig.link_index = 0; // Link index
-    configTMC2240.microsteps = 64;        // microsteps
-    configTMC2240.rmsCurrent = 2000;       // RMS current (mA)
-    configTMC2240.stepsPerRev = 200;      // 200 steps per revolution
-    configTMC2240.maxRPM = 2500;  // Max rotation speed
-    configTMC2240.ledcChannel = 1;        // LEDC channel
-    configTMC2240.acceleration = 15000.0;          // Different acceleration    
-
-    StepperConfig configEncTMC2209;
-    configEncTMC2209.name = "TMC2209+Encoder I";
-    configEncTMC2209.stepPin = 45; //2;           // Step pin
-    configEncTMC2209.dirPin = 47; //42;            // Direction pin
-    configEncTMC2209.enablePin = 1;         // Enable pin
-    configEncTMC2209.stepperEnabledHigh = false; // Active HIGH
-    configEncTMC2209.invertDirection = true; // Reverse counting
-    configEncTMC2209.encoderAPin = 21; //38;      // Encoder A pin
-    configEncTMC2209.encoderBPin = 20; //40;      // Encoder B pin
-    configEncTMC2209.encoderZPin = 19; //41;      // Encoder Z pin
-    configEncTMC2209.encoderAttachMode = 4;       // Default to Full Quad
-    configEncTMC2209.encoderResolution = 1000;    // Not really encoder. Just connect output STEP pin to input CNT and count steps (200 steps/rev * 256 microsteps)
-    configEncTMC2209.driverSettings.driverType = TMC2209_DRIVER; //STEP_DIR_ONLY;
-    configEncTMC2209.driverSettings.uartConfig.uart = &Serial1;             // UART for TMC
-    configEncTMC2209.driverSettings.uartConfig.driverAddress = 0b11; //0b00; // 0b11;   // TMC220 9 address
-    configEncTMC2209.driverSettings.uartConfig.rSense = 0.11f;         // Current sense resistor
-    configEncTMC2209.microsteps = 64;        // microsteps
-    configEncTMC2209.rmsCurrent = 800;       // RMS current (mA)
-    configEncTMC2209.stepsPerRev = 200;      // 200 steps per revolution
-    configEncTMC2209.maxRPM = 300;  // Max rotation speed
-    configEncTMC2209.ledcChannel = 0;        // LEDC channel
-    configEncTMC2209.acceleration = 15000.0;          // Different acceleration
-
-    StepperConfig configEncTMC2209_2;
-    configEncTMC2209_2.name = "TMC2209+Encoder II";
-    configEncTMC2209_2.stepPin = 2;           // Step pin
-    configEncTMC2209_2.dirPin = 42;            // Direction pin
-    configEncTMC2209_2.enablePin = 1;         // Enable pin
-    configEncTMC2209_2.stepperEnabledHigh = false; // Active HIGH
-    configEncTMC2209_2.invertDirection = true; // Reverse counting
-    configEncTMC2209_2.encoderAPin = 38;      // Encoder A pin
-    configEncTMC2209_2.encoderBPin = 40;      // Encoder B pin
-    configEncTMC2209_2.encoderZPin = 41;      // Encoder Z pin
-    configEncTMC2209_2.encoderAttachMode = 4;       // Default to Full Quad
-    configEncTMC2209_2.encoderResolution = 1000;    // Not really encoder. Just connect output STEP pin to input CNT and count steps (200 steps/rev * 256 microsteps)
-    configEncTMC2209_2.driverSettings.driverType = TMC2209_DRIVER; //STEP_DIR_ONLY;
-    configEncTMC2209_2.driverSettings.uartConfig.uart = &Serial1;             // UART for TMC
-    configEncTMC2209_2.driverSettings.uartConfig.driverAddress = 0b00;  // TMC220 9 address
-    configEncTMC2209_2.driverSettings.uartConfig.rSense = 0.11f;         // Current sense resistor
-    configEncTMC2209_2.microsteps = 64;        // microsteps
-    configEncTMC2209_2.rmsCurrent = 800;       // RMS current (mA)
-    configEncTMC2209_2.stepsPerRev = 200;      // 200 steps per revolution
-    configEncTMC2209_2.maxRPM = 300;  // Max rotation speed
-    configEncTMC2209_2.ledcChannel = 1;        // LEDC channel
-    configEncTMC2209_2.acceleration = 15000.0;          // Different acceleration
+    StepperConfig configEncTMC2209_2 = {
+        .name = String("TMC2209+Encoder II"),
+        .stepPin = 2,           // Step pin
+        .dirPin = 42,            // Direction pin
+        .enablePin = 1,         // Enable pin
+        .invertDirection = true, // Reverse counting
+        .stepperEnabledHigh = false, // Active HIGH
+        .encoderSettings = {
+            .pinA = 38,      // Encoder A pin
+            .pinB = 40,      // Encoder B pin
+            .pinZ = 41,      // Encoder Z pin
+            .attachMode = 4,       // Default to Full Quad
+            .resolution = 1000    // Not really encoder. Just connect output STEP pin to input CNT and count steps (200 steps/rev * 256 microsteps)
+        },
+        .driverSettings = {
+            .driverType = TMC2209_DRIVER, //STEP_DIR_ONLY;
+            .uartConfig = {
+                .uart = &Serial1,             // UART for TMC
+                .driverAddress = 0b11,  // TMC220 9 address
+                .rSense = 0.11f         // Current sense resistor
+            }
+        },
+        .stepsPerRev = 200,      // 200 steps per revolution
+        .microsteps = 64,        // microsteps
+        .rmsCurrent = 800,       // RMS current (mA)
+        .maxRPM = 300,  // Max rotation speed
+        .rpsAcceleration = 5.0,
+        .ledcChannel = 1        // LEDC channel
+    };
 
     if (!stepperController.addStepper(0, configEncTMC2209)) {
         Serial.println("Failed to add stepper 0");
@@ -442,9 +355,6 @@ void manualControlDecreaseSpeed(double decrement) {
 }
 
 void manualControlSelectNextStepper() {
-    // Stop current motor
-    stepperController.stop(manualControlStepperIndex);
-    
     // Move to next stepper
     manualControlStepperIndex++;
     if (manualControlStepperIndex >= stepperController.getStepperCount()) {

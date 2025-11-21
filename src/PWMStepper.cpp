@@ -146,7 +146,7 @@ void ARDUINO_ISR_ATTR PWMStepper::update() {
             currentFreq = 0;
         }
     }
-    int freqUpdateInterval = 100;
+    int freqUpdateInterval = 50;
     updateNumber++;
     if (updateNumber % freqUpdateInterval != 0) {
         return;

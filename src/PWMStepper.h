@@ -41,6 +41,7 @@ private:
     bool direction;  // true = forward, false = reverse
     bool invertDirection = false; // true = invert direction logic
     volatile double currentFreq = 0;
+    volatile double encoderFrequency = 0;
     volatile double acceleration;
     volatile double maxFreq;
     volatile double targetFreq;
@@ -101,6 +102,7 @@ public:
     void setTargetFrequency(double frequency);
     void setAcceleration(double accel);
     void setTargetPosition(int64_t position);
+    void setEncoderScale(float scale) { encoderScale = scale; }
     void setMaxFreq(int64_t maxFrequency) { maxFreq = maxFrequency; }   
     void setStepperEnabledHigh(bool enabled) { stepperEnabledHigh = enabled; }
     void setInvertDirection(bool invert) { invertDirection = invert; }

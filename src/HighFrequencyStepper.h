@@ -168,7 +168,7 @@ public:
 
     
     // Movement methods
-    bool moveToPosition(uint8_t index, int32_t position, double frequency = 0, bool blocking = true);
+    bool moveToPosition(uint8_t index, int32_t position, double frequency = 0, bool blocking = true, bool correctPosition = true);
     bool moveRelative(uint8_t index, int32_t steps, double frequency = 0, bool blocking = true);
     bool moveToAngle(uint8_t index, double angleDegrees, double frequency = 0, bool blocking = true);
     bool moveToAngleRelative(uint8_t index, double angleDegrees, double frequency = 0, bool blocking = true);

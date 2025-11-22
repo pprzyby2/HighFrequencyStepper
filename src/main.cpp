@@ -120,9 +120,9 @@ void setup() {
         },
         .stepsPerRev = 200,      // 200 steps per revolution
         .microsteps = 64,        // microsteps
-        .rmsCurrent = 800,       // RMS current (mA)
+        .rmsCurrent = 1000,       // RMS current (mA)
         .maxRPM = 300,  // Max rotation speed
-        .rpsAcceleration = 5.0,
+        .rpsAcceleration = 3.0,
         .ledcChannel = 0        // LEDC channel        
     };
 
@@ -151,9 +151,9 @@ void setup() {
         },
         .stepsPerRev = 200,      // 200 steps per revolution
         .microsteps = 64,        // microsteps
-        .rmsCurrent = 800,       // RMS current (mA)
+        .rmsCurrent = 1000,       // RMS current (mA)
         .maxRPM = 300,  // Max rotation speed
-        .rpsAcceleration = 5.0,
+        .rpsAcceleration = 3.0,
         .ledcChannel = 1        // LEDC channel
     };
 
@@ -183,8 +183,8 @@ void setup() {
     } else {
         Serial.println("LED Status Indicator ready");
         ledStatus.setStatus(LED_INITIALIZING);
-        delay(1000);
-        ledStatus.test(); // Run LED test sequence
+        //delay(1000);
+        //ledStatus.test(); // Run LED test sequence
     }
     
     // Print initial status
@@ -547,8 +547,9 @@ void manualControlChangeMicrosteps() {
     }
     
     if (stepperController.setMicrosteps(manualControlStepperIndex, microsteps)) {
-        Serial.printf("✓ Microsteps changed to %d\n", microsteps);
-        Serial.printf("   Steps per revolution: %d\n", config.stepsPerRev * microsteps);
+        Serial.printf("✓ Microsteps changed to %d\n", stepperController.getMicrosteps(manualControlStepperIndex));
+        Serial.printf("   Steps per revolution: %d\n", stepperController.getMicrostepsPerRevolution(manualControlStepperIndex));
+        Serial.printf("   Max frequency: %.2f Hz\n", stepperController.getMaxFrequency(manualControlStepperIndex));
     } else {
         Serial.println("✗ Failed to set microsteps");
     }

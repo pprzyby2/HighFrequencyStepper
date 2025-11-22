@@ -151,6 +151,18 @@ void ARDUINO_ISR_ATTR PWMStepper::update() {
     if (updateNumber % freqUpdateInterval != 0) {
         return;
     }
+    if (updateNumber < MAX_POSITION_HISTORY) {
+        encoderFrequency = abs((currentPosition - positionHistory[0]) * 1000000.0 / (currentTime - updateTimes[0]));
+    } else {
+        encoderFrequency = abs((currentPosition - positionHistory[updateNumber % MAX_POSITION_HISTORY]) * 1000000.0 / (currentTime - updateTimes[updateNumber % MAX_POSITION_HISTORY]));
+    }
+    
+    if (currentFreq > FREQUENCY_THRESHOLD && encoderFrequency < 50) {
+        // Possible stall or missed steps
+        //startPWM(encoderFrequency);
+    }
+
+
     int64_t error = targetPosition - currentPosition;
     double unitFrequencyChange = acceleration * (freqUpdateInterval * PWM_STEPPER_TIMER_DELAY / 1000000.0);
 
@@ -160,14 +172,6 @@ void ARDUINO_ISR_ATTR PWMStepper::update() {
         case STEPPER_IDLE:
             return; // Do nothing if not running
         case STEPPER_MOVE_TO_POSITION:
-
-            // if (error != 0) {
-            //     bool dir = error > 0;
-            //     if (invertDirection) {
-            //         dir = !dir;
-            //     }
-            //     setDirection(dir);
-            // }
             if (abs(error) >= int(encoderScale) + 1) {                
                 if (acceleration != 0) {
                     double decelerationUpdates = (currentFreq / unitFrequencyChange);
@@ -359,6 +363,7 @@ void PWMStepper::printStatus() const {
     Serial.printf("Enabled: %s, ", isEnabled() ? "Yes" : "No");
     Serial.printf("Direction: %s, ", direction ? "Forward" : "Reverse");
     Serial.printf("Current Freq: %.2f Hz, ", currentFreq);
+    Serial.printf("Encoder Freq: %.2f Hz, ", encoderFrequency);
     Serial.printf("Target Freq: %.2f Hz, ", targetFreq);
     Serial.printf("Acceleration: %.2f steps/s², ", acceleration);
     Serial.printf("Dec Distance: %.2f steps, ", decelerationDistance);

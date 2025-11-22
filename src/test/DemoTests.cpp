@@ -154,19 +154,25 @@ void testAsyncMovement(HighFrequencyStepper& stepper) {
     
     // Monitor progress
     bool allDone = false;
-    int maxLoops = 120; // Timeout after 120 loops (~60 seconds)
+    int maxLoops = 600; // Timeout after 600 loops (~60 seconds)
     int loopCount = 0;
     while (!allDone) {
         allDone = true;
         for (uint8_t i = 0; i < numSteppers; i++) {
             if (stepper.isMoving(i)) {
                 allDone = false;
-                Serial.printf("Stepper %d current position: %d, target position: %d, current frequency: %f\n", i, stepper.getPosition(i), stepper.getTargetPosition(i), stepper.getCurrentFrequency(i));
-            } else {
+                Serial.printf("Stepper %d current position: %d, curr angle: %f, target position: %d, current frequency: %f\n", i, 
+                    stepper.getPosition(i), 
+                    stepper.getAngle(i), 
+                    stepper.getTargetPosition(i), 
+                    stepper.getCurrentFrequency(i));
+                    stepper.printStatus(i);
+                
+            } else {    
                 Serial.printf("Stepper %d reached target position: %d\n", i, stepper.getPosition(i));
             }
         }
-        delay(500); // Update every 500ms
+        delay(100); 
         loopCount++;
         if (loopCount >= maxLoops) {
             Serial.println("Timeout reached, stopping monitoring.");

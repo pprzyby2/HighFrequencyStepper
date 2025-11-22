@@ -246,12 +246,16 @@ void configureTMC2209Driver(TMC2209Stepper* driver, uint16_t rmsCurrent, uint16_
     driver->microsteps(microsteps);
     driver->VACTUAL(0);
 
+    driver->irun(31);                     // Run current = 100% of rms_current
+    driver->hold_multiplier(10);          // Hold current = ~50% of run current
+    driver->iholddelay(5);                // Delay before reducing to hold: 5 * 2^18 clocks
+    driver->en_spreadCycle(true);         // TRUE for high RPM
     // // High-speed optimized settings:
     // driver->toff(5);                      // Enable with balanced chopper freq (~37 kHz)
     // driver->blank_time(24);               // Standard blank time
 
     // // SpreadCycle for high speed
-    // driver->en_spreadCycle(false);         // TRUE for high RPM
+    
     // driver->TCOOLTHRS(40);                 // 0 = always use SpreadCycle
     // driver->TPWMTHRS(50);                 // Threshold for switching to SpreadCycle
     // driver->SGTHRS(30);                    // Set stallGuard threshold
@@ -266,9 +270,6 @@ void configureTMC2209Driver(TMC2209Stepper* driver, uint16_t rmsCurrent, uint16_
 
     // // Current control - FIXED METHOD NAMES:
     // driver->pwm_autoscale(true);         // 
-    // driver->irun(31);                     // Run current = 100% of rms_current
-    // driver->hold_multiplier(16);          // Hold current = ~50% of run current
-    // driver->iholddelay(5);                // Delay before reducing to hold: 5 * 2^18 clocks
 }
 
 // Initialize all steppers
@@ -302,6 +303,7 @@ bool HighFrequencyStepper::setAcceleration(uint8_t index, double rpsAcceleration
     if (!validateStepperIndex(index)) return false;
     
     configs[index].rpsAcceleration = rpsAcceleration;
+    pwmSteppers[index]->setAcceleration(rpmToFrequency(index, 60.0 * rpsAcceleration)); // Convert RPS^2 to steps/s^2
 
     Serial.printf("Stepper %d acceleration set to %.2f RPS^2\n", index, rpsAcceleration);
 
@@ -367,7 +369,7 @@ bool HighFrequencyStepper::getInvertDirection(uint8_t index) const {
 
 
 // Move to absolute position
-bool HighFrequencyStepper::moveToPosition(uint8_t index, int32_t position, double frequency, bool blocking) {
+bool HighFrequencyStepper::moveToPosition(uint8_t index, int32_t position, double frequency, bool blocking, bool correctPosition) {
     if (!validateStepperIndex(index)) return false;
 
     if (frequency == 0 || frequency > getMaxFrequency(index)) frequency = getMaxFrequency(index);
@@ -410,7 +412,11 @@ bool HighFrequencyStepper::moveToPosition(uint8_t index, int32_t position, doubl
         }
         status[index].isMoving = false;
     }
-    return true;
+    if (correctPosition) {
+        return moveToPosition(index, position, configs[index].microsteps, blocking, false);
+    } else {
+        return true;
+    }
 }
 
 
@@ -862,8 +868,13 @@ bool HighFrequencyStepper::setMicrosteps(uint8_t index, uint16_t microsteps) {
 
     // Adjust max frequency accordingly
     double maxFreq = (configs[index].maxRPM / 60.0) * configs[index].microsteps * configs[index].stepsPerRev; // Convert RPM to Hz 
-    pwmSteppers[index]->setMaxFreq(maxFreq);    
+    double acceleration = rpmToFrequency(index, 60.0 * configs[index].rpsAcceleration); // Convert RPS^2 to steps/s^2
     configs[index].encoderToMicrostepRatio = float(configs[index].stepsPerRev * configs[index].microsteps) / float(configs[index].encoderSettings.resolution * configs[index].encoderSettings.attachMode);
+    pwmSteppers[index]->setMaxFreq(maxFreq);
+    pwmSteppers[index]->setAcceleration(acceleration);
+    pwmSteppers[index]->setEncoderScale(configs[index].encoderToMicrostepRatio);
+
+    Serial.printf("Stepper %d microsteps set to %d, acceleration set to %f, max frequency set to %f, encoder to microstep ratio set to %f\n", index, microsteps, acceleration, maxFreq, configs[index].encoderToMicrostepRatio);
     if (!tmc2209Drivers[index]) {
         return false;
     } else {

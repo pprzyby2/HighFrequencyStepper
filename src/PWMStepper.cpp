@@ -42,7 +42,7 @@ static bool try_config_ledc_timer(ledc_mode_t speedMode,
     return ledc_timer_config(&tcfg) == ESP_OK;
 }
 
-void initTimers() {
+void initStepperTimers() {
     if (pwm_stepper_timer != nullptr) {
         return; // Already initialized
     }
@@ -101,7 +101,7 @@ void PWMStepper::begin() {
     stopLEDCMode();
 
     pwmStepperInstances.push_back(this);
-    initTimers();
+    initStepperTimers();
 
     positionHistory.reserve(MAX_POSITION_HISTORY);
     updateTimes.reserve(MAX_POSITION_HISTORY);

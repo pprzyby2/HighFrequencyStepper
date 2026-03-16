@@ -15,7 +15,9 @@
 enum DriverType {
     STEP_DIR_ONLY = 0,
     TMC2209_DRIVER = 1,
+#ifdef TMC2240
     TMC2240_DRIVER = 2
+#endif
 };
 
 struct UARTConfig {
@@ -24,6 +26,7 @@ struct UARTConfig {
     float rSense;            // Current sense resistor value (based on driver's internal resistors, typically 0.11 or 0.075 Ohms)
 };
 
+#ifdef TMC2240
 struct SPIConfig {
     uint8_t pinCS;          // Chip Select pin
     uint8_t pinMOSI;        // MOSI pin
@@ -31,11 +34,14 @@ struct SPIConfig {
     uint8_t pinSCK;         // SCK pin
     uint8_t link_index;     // Link index in SPI chain
 };
+#endif
 
 struct StepperDriverSettings {
     DriverType driverType;  // Type of stepper driver
     UARTConfig uartConfig;   // UART configuration (for TMC2209)
+#ifdef TMC2240
     SPIConfig spiConfig;     // SPI configuration (for TMC2240)
+#endif
 };
 
 struct EncoderSettings {
@@ -109,7 +115,9 @@ private:
     PWMStepper* pwmSteppers[MAX_STEPPERS];
     ESP32Encoder* pulseCounters[MAX_STEPPERS];
     TMC2209Stepper* tmc2209Drivers[MAX_STEPPERS];
+#ifdef TMC2240
     TMC2240Stepper* tmc2240Drivers[MAX_STEPPERS];
+#endif
     HardwareSerial* uartPorts[MAX_STEPPERS];
     
     // Configuration and status for each stepper

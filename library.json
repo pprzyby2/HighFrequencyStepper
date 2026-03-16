@@ -1,7 +1,7 @@
 {
   "name": "ESP32-HighFrequencyStepper",
   "version": "1.0.0",
-  "description": "High-performance stepper motor controller for ESP32 with TMC2209/TMC2240 driver support, position feedback via ESP32Encoder, and LED status indication. Features dual-mode PWM generation (LEDC/Timer), multi-stepper support (up to 4 motors), StallGuard integration, and configurable acceleration profiles.",
+  "description": "High-performance stepper motor controller for ESP32 with TMC2209/TMC2240 driver support, position feedback via ESP32Encoder, and LED status indication. Features dual-mode PWM generation (LEDC/Timer), multi-stepper support (up to 4 motors), StallGuard integration, and configurable acceleration profiles. TMC2240 support requires -DTMC2240 build flag.",
   "keywords": [
     "stepper",
     "motor",
@@ -22,7 +22,7 @@
   ],
   "repository": {
     "type": "git",
-    "url": ""
+    "url": "git@github.com:pprzyby2/HighFrequencyStepper.git"
   },
   "license": "MIT",
   "frameworks": "arduino",

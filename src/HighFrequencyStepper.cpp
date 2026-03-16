@@ -11,6 +11,9 @@ HighFrequencyStepper::HighFrequencyStepper() {
         pwmSteppers[i] = nullptr;
         pulseCounters[i] = nullptr;
         tmc2209Drivers[i] = nullptr;
+#ifdef TMC2240
+        tmc2240Drivers[i] = nullptr;
+#endif
         uartPorts[i] = nullptr;
     }
 }
@@ -99,6 +102,7 @@ bool HighFrequencyStepper::addStepper(uint8_t index, const StepperConfig& config
         }
         uartPorts[index] = configs[index].driverSettings.uartConfig.uart;    
         tmc2209Drivers[index] = new TMC2209Stepper(uartPorts[index], config.driverSettings.uartConfig.rSense, config.driverSettings.uartConfig.driverAddress);
+#ifdef TMC2240
     } else if (config.driverSettings.driverType == TMC2240_DRIVER) {
         TMC2240Stepper *tmc2240Driver = new TMC2240Stepper(
             config.driverSettings.spiConfig.pinCS, 
@@ -107,10 +111,13 @@ bool HighFrequencyStepper::addStepper(uint8_t index, const StepperConfig& config
             config.driverSettings.spiConfig.pinSCK);
         uartPorts[index] = nullptr; // No UART for TMC2240
         tmc2240Drivers[index] = tmc2240Driver;
+#endif
     } else {
         uartPorts[index] = nullptr; // No TMC driver
         tmc2209Drivers[index] = nullptr;
+#ifdef TMC2240
         tmc2240Drivers[index] = nullptr;
+#endif
     }
         
     // Update stepper count
@@ -151,7 +158,9 @@ bool HighFrequencyStepper::initializeStepper(uint8_t index) {
     if (tmc2209Drivers[index]) {
         tmc2209Drivers[index]->begin();
         configureTMC2209Driver(tmc2209Drivers[index], configs[index].rmsCurrent, configs[index].microsteps);
-    } else if (tmc2240Drivers[index]) {
+    }
+#ifdef TMC2240
+    else if (tmc2240Drivers[index]) {
         TMC2240Stepper *tmc2240Driver = tmc2240Drivers[index];
         while (true) {
             enableStepper(index);
@@ -225,7 +234,9 @@ bool HighFrequencyStepper::initializeStepper(uint8_t index) {
         }
 
 
-    } else {
+    }
+#endif
+    else {
         Serial.println("WARNING: TMC2209 driver not initialized");
     }
     
@@ -752,7 +763,9 @@ bool HighFrequencyStepper::selfTest(uint8_t index) {
         } else {
             Serial.printf("TMC Driver Version: 0x%08X\n", tmc2209Drivers[index]->version());
         }
-    } else if (tmc2240Drivers[index]) {
+    }
+#ifdef TMC2240
+    else if (tmc2240Drivers[index]) {
         enableStepper(index);
         //tmc2240Drivers[index]->en_pwm_mode(1);
         Serial.printf("Test connection: %d\n", tmc2240Drivers[index]->test_connection());
@@ -764,7 +777,9 @@ bool HighFrequencyStepper::selfTest(uint8_t index) {
         //               tmc2240Drivers[index]->uart_en() == configs[index].driverSettings.spiConfig.pinCS ? "HIGH" : "LOW");
         // disableStepper(index); // Disable after test
         // Serial.printf("TMC2240 Driver DRV_ENN: %s\n", tmc2240Drivers[index]->drv_enn() ? "YES" : "NO");
-    } else {
+    }
+#endif
+    else {
         Serial.println("WARN: No TMC driver instance");
     }
     

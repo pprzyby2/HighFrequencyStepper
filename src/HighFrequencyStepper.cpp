@@ -678,10 +678,11 @@ bool HighFrequencyStepper::isEnabled(uint8_t index) {
 // Set position (zero or calibrate)
 bool HighFrequencyStepper::setPosition(uint8_t index, int32_t position) {
     if (!validateStepperIndex(index)) return false;
-    
-    pulseCounters[index]->setCount(position);
-    status[index].currentPosition = position;
-    status[index].targetPosition = position;
+
+    int64_t pcntValue = (int64_t(position) / configs[index].encoderToMicrostepRatio);
+    pulseCounters[index]->setCount(pcntValue);
+    status[index].currentPosition = pcntValue;
+    status[index].targetPosition = pcntValue;
     return true;
 }
 

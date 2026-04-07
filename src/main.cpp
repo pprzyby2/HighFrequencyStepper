@@ -96,17 +96,17 @@ void setup() {
     
     Serial.println("=== HighFrequencyStepper Example ===");
     
-    StepperConfig configEncTMC2209 = {
-        .name = String("TMC2209+Encoder I"),
-        .stepPin = 45, //2;           // Step pin
-        .dirPin = 47, //42;            // Direction pin
+    StepperConfig ra_stepper_config = {
+        .name = String("RA Stepper"),
+        .stepPin = 2,
+        .dirPin = 42,
         .enablePin = 1,         // Enable pin
-        .invertDirection = true, // Reverse counting
+        .invertDirection = false, // Reverse counting
         .stepperEnabledHigh = false, // Active HIGH
         .encoderSettings = {
-            .pinA = 21, //38;      // Encoder A pin
-            .pinB = 20, //40;      // Encoder B pin
-            .pinZ = 19, //41;      // Encoder Z pin
+            .pinA = 38,
+            .pinB = 40,
+            .pinZ = 41,
             .attachMode = 4,       // Default to Full Quad
             .resolution = 1000    // Not really encoder. Just connect output STEP pin to input CNT and count steps (200 steps/rev * 256 microsteps)
         },
@@ -126,18 +126,17 @@ void setup() {
         .ledcChannel = 0        // LEDC channel        
     };
 
-
-    StepperConfig configEncTMC2209_2 = {
-        .name = String("TMC2209+Encoder II"),
-        .stepPin = 2,           // Step pin
-        .dirPin = 42,            // Direction pin
+    StepperConfig dec_stepper_config = {
+        .name = String("DEC Stepper"),
+        .stepPin = 45, //2;           // Step pin
+        .dirPin = 47, //42;            // Direction pin
         .enablePin = 1,         // Enable pin
-        .invertDirection = true, // Reverse counting
+        .invertDirection = false, // Reverse counting
         .stepperEnabledHigh = false, // Active HIGH
         .encoderSettings = {
-            .pinA = 38,      // Encoder A pin
-            .pinB = 40,      // Encoder B pin
-            .pinZ = 41,      // Encoder Z pin
+            .pinA = 21, //38;      // Encoder A pin
+            .pinB = 20, //40;      // Encoder B pin
+            .pinZ = 19, //41;      // Encoder Z pin
             .attachMode = 4,       // Default to Full Quad
             .resolution = 1000    // Not really encoder. Just connect output STEP pin to input CNT and count steps (200 steps/rev * 256 microsteps)
         },
@@ -145,7 +144,7 @@ void setup() {
             .driverType = TMC2209_DRIVER, //STEP_DIR_ONLY;
             .uartConfig = {
                 .uart = &Serial1,             // UART for TMC
-                .driverAddress = 0b11,  // TMC220 9 address
+                .driverAddress = 0b11, // TMC220 9 address
                 .rSense = 0.11f         // Current sense resistor
             }
         },
@@ -154,17 +153,17 @@ void setup() {
         .rmsCurrent = 1000,       // RMS current (mA)
         .maxRPM = 300,  // Max rotation speed
         .rpsAcceleration = 3.0,
-        .ledcChannel = 1        // LEDC channel
+        .ledcChannel = 0        // LEDC channel        
     };
 
-    if (!stepperController.addStepper(0, configEncTMC2209)) {
+    if (!stepperController.addStepper(0, ra_stepper_config)) {
         Serial.println("Failed to add stepper 0");
         return;
     }
-    if (!stepperController.addStepper(1, configEncTMC2209_2)) {
-        Serial.println("Failed to add stepper 1");
-        return;
-    }
+    // if (!stepperController.addStepper(1, dec_stepper_config)) {
+    //     Serial.println("Failed to add stepper 1");
+    //     return;
+    // }
 
     // Initialize all steppers
     if (!stepperController.initializeAll()) {

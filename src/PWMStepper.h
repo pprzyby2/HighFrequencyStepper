@@ -38,7 +38,7 @@ private:
     StepperMode mode = MODE_LEDC;
 
     bool stepperEnabledHigh; // true if enable pin is active HIGH
-    bool direction;  // true = forward, false = reverse
+    //bool direction;  // true = forward, false = reverse
     bool invertDirection = false; // true = invert direction logic
     volatile double currentFreq = 0;
     volatile double encoderFrequency = 0;
@@ -47,7 +47,6 @@ private:
     volatile double targetFreq;
     volatile int64_t targetPosition;
     volatile int updateNumber = 0;
-    volatile bool decelerating = false;
     volatile double decelerationDistance = 0;
     static const size_t MAX_POSITION_HISTORY = 100; // Max history size
     std::vector<int64_t> positionHistory; // For tracking position over time
@@ -68,7 +67,7 @@ private:
     void startTimerMode(double frequency);
     void stopLEDCMode();
     void stopTimerMode();
-    void onSpeedChange(double frequency, bool dir);
+    void onSpeedChange(double frequency);
     void startPWM(double frequency);
 
     

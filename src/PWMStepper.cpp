@@ -374,8 +374,16 @@ bool PWMStepper::isEnabled() const {
 }
 
 bool PWMStepper::getDirection() const {
-    int64_t currentPosition = getPosition();
-    return currentPosition < targetPosition; // true = forward, false = reverse
+    bool currentDir = digitalRead(dirPin);
+    int speed = currentFreq;
+    if (abs(speed) < 400) {
+        // If speed is very low, determine direction based on target position vs current position
+        int64_t currentPosition = getPosition();
+        return currentPosition < targetPosition; // true = forward, false = reverse
+    } else {
+        // For higher speeds, determine direction based on current frequency sign
+        return invertDirection ? speed < 0 : speed > 0; // true = forward, false = reverse
+    }
 }
 
 double PWMStepper::getFrequency() const {

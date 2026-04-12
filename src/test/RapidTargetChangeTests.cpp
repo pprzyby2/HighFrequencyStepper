@@ -315,3 +315,94 @@ void testChasingTarget(HighFrequencyStepper& stepper) {
     
     Serial.println("\n=== Chasing Target Test Complete ===\n");
 }
+
+void testLongRun(HighFrequencyStepper& stepper) {
+    Serial.println("\n=== Long Run Stability Test ===");
+    Serial.println("Running the stepper continuously for an extended period to check for stability and overheating...\n");
+    
+    for (int index = 0; index < stepper.getStepperCount(); index++) {
+        String stepperName = stepper.getName(index);
+        Serial.printf("\n--- Testing %s (Index %d) ---\n", stepperName.c_str(), index);
+        
+        stepper.setPosition(index, 0);
+        stepper.enableStepper(index);
+        delay(100);
+        
+        int32_t stepsPerRev = stepper.getMicrostepsPerRevolution(index);
+        double testFreq = stepper.getMaxFrequency(index) / 2;
+        
+        int32_t targetPos = 2312696; 
+        uint32_t runDuration = 90000; // Run for 90 seconds
+        
+        Serial.printf("Target position: %d steps (%d revolutions)\n", targetPos, targetPos / stepsPerRev);
+        Serial.printf("Test duration: %d ms\n", runDuration);
+        
+        uint32_t startTime = millis();
+        
+        // Start moving to target position
+        stepper.moveToPosition(index, targetPos, testFreq, false, false);
+        
+        // Monitor during run
+        int stage = 0;
+        while (millis() - startTime < runDuration && stepper.isMoving(index)) {
+            int32_t currentPos = stepper.getPosition(index);
+            Serial.printf("  Time: %d s, Current position: %d\n", (millis() - startTime) / 1000, currentPos);
+            
+            if (stage == 0 && currentPos > targetPos * 0.7) { // Once we are 70% of the way there, change target to 30% to force a rapid change in direction and test stability
+                stepper.moveToPosition(index, targetPos * 0.3, testFreq, false, false);
+                stage = 1;
+            } else if (stage == 1 && currentPos < targetPos * 0.4) {
+                stepper.moveToPosition(index, targetPos, testFreq, false, false);
+                stage = 2;                
+            }
+            delay(500); // Log every 0.5 seconds
+        }
+        
+        // Stop and check final position
+        stepper.stop(index);
+        
+        int32_t finalPos = stepper.getPosition(index);
+        int32_t error = abs(targetPos - finalPos);
+        
+        bool passed = error <= stepsPerRev / 50; // Within 2% tolerance
+        float accuracy = 100.0 * (1.0 - (float)error / targetPos);
+        
+        Serial.printf("Final target: %d, Actual position: %d, Error: %d steps\n", targetPos, finalPos, error);
+        Serial.printf("Long run accuracy: %.2f%% - %s\n", accuracy, passed ? "PASSED" : "FAILED");
+        
+        addTestResult(stepperName, "Long Run Stability", passed,
+                     "Target: " + String(targetPos) + ", Actual: " + String(finalPos) + ", Error: " + String(error), accuracy);
+        
+        Serial.printf("Target position: %d steps (%d revolutions)\n", targetPos, targetPos / stepsPerRev);
+        Serial.printf("Test duration: %d ms\n", runDuration);
+        
+        startTime = millis();
+        
+        // Start moving to target position
+        stepper.moveToPosition(index, 0, testFreq, false, false);
+        
+        // Monitor during run
+        while (millis() - startTime < runDuration && stepper.isMoving(index)) {
+            int32_t currentPos = stepper.getPosition(index);
+            Serial.printf("  Time: %d s, Current position: %d\n", (millis() - startTime) / 1000, currentPos);
+            stepper.moveToPosition(index, 0, testFreq, false, false);
+            delay(500); // Log every 0.5 seconds
+        }
+        
+        // Stop and check final position
+        stepper.stop(index);
+        
+        finalPos = stepper.getPosition(index);
+        error = abs(0 - finalPos);
+        
+        passed = error <= stepsPerRev / 50; // Within 2% tolerance
+        accuracy = 100.0 * (1.0 - (float)error / stepsPerRev);
+        
+        Serial.printf("Final target: %d, Actual position: %d, Error: %d steps\n", 0, finalPos, error);
+        Serial.printf("Long run accuracy: %.2f%% - %s\n", accuracy, passed ? "PASSED" : "FAILED");
+        
+        addTestResult(stepperName, "Long Run Stability", passed,
+                     "Target: " + String(0) + ", Actual: " + String(finalPos) + ", Error: " + String(error), accuracy);
+
+    }
+}

@@ -161,12 +161,15 @@ void testAsyncMovement(HighFrequencyStepper& stepper) {
         for (uint8_t i = 0; i < numSteppers; i++) {
             if (stepper.isMoving(i)) {
                 allDone = false;
-                Serial.printf("Stepper %d current position: %d, curr angle: %f, target position: %d, current frequency: %f\n", i, 
-                    stepper.getPosition(i), 
-                    stepper.getAngle(i), 
-                    stepper.getTargetPosition(i), 
-                    stepper.getCurrentFrequency(i));
+
+                if (loopCount % 100 == 0) { 
+                    Serial.printf("Stepper %d current position: %d, curr angle: %f, target position: %d, current frequency: %f\n", i, 
+                        stepper.getPosition(i), 
+                        stepper.getAngle(i), 
+                        stepper.getTargetPosition(i), 
+                        stepper.getCurrentFrequency(i));
                     stepper.printStatus(i);
+                }
                 
             } else {    
                 Serial.printf("Stepper %d reached target position: %d\n", i, stepper.getPosition(i));

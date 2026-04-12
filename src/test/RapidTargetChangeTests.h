@@ -37,4 +37,14 @@ void testRapidOscillation(HighFrequencyStepper& stepper);
  */
 void testChasingTarget(HighFrequencyStepper& stepper);
 
+/**
+ * @brief Test long-duration run for stability
+ * 
+ * Tests the stepper's ability to maintain accuracy and stability
+ * over an extended period of continuous operation.
+ * 
+ * @param stepper Reference to HighFrequencyStepper controller
+ */
+void testLongRun(HighFrequencyStepper& stepper);
+
 #endif // RAPIDTARGETCHANGETESTS_H

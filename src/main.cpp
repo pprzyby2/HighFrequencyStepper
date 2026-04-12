@@ -80,10 +80,11 @@ enum TestOption {
     TEST_RAPID_TARGET_CHANGES = 11,
     TEST_RAPID_OSCILLATION = 12,
     TEST_CHASING_TARGET = 13,
-    RUN_ALL_TESTS = 14,
-    SHOW_SYSTEM_STATUS = 15,
-    LED_STATUS_TEST = 16,
-    MANUAL_CONTROL = 17,
+    TEST_LONG_RUN = 14,
+    RUN_ALL_TESTS = 15,
+    SHOW_SYSTEM_STATUS = 16,
+    LED_STATUS_TEST = 17,
+    MANUAL_CONTROL = 18,
     RESET_POSITION = 0
 };
 
@@ -215,10 +216,11 @@ void printTestMenu() {
     Serial.println("11. Rapid Target Change Test");
     Serial.println("12. Rapid Oscillation Test");
     Serial.println("13. Chasing Target Test");
-    Serial.println("14. Run ALL Tests");
-    Serial.println("15. Show System Status");
-    Serial.println("16. LED Status Test");
-    Serial.println("17. Manual Motor Control");
+    Serial.println("14. Long Run Test");
+    Serial.println("15. Run ALL Tests");
+    Serial.println("16. Show System Status");
+    Serial.println("17. LED Status Test");
+    Serial.println("18. Manual Motor Control");
     Serial.println("0. Reset Position Counter");
     Serial.println("\nEnter test number (or 'h' for help): ");
 }
@@ -713,47 +715,49 @@ void runAllTests() {
     clearTestResults();
     
     // Run all tests in sequence
-    Serial.println("\n[1/13] Running direction tests...");
+    Serial.println("\n[1/14] Running direction tests...");
     for (int i = 0; i < stepperController.getStepperCount(); i++) {
         testDirectionChanges(stepperController, i);
     }
 
-    Serial.println("\n[2/13] Running high speed tests...");
+    Serial.println("\n[2/14] Running high speed tests...");
     testHighSpeedAcceleration(stepperController);
 
-    Serial.println("\n[3/13] Running low speed precision tests...");
+    Serial.println("\n[3/14] Running low speed precision tests...");
     testLowSpeedPrecision(stepperController);
 
-    Serial.println("\n[4/13] Running overflow tests...");
+    Serial.println("\n[4/14] Running overflow tests...");
     testCounterOverflow(stepperController);
 
-    Serial.println("\n[5/13] Running position tracking demo...");
+    Serial.println("\n[5/14] Running position tracking demo...");
     demonstratePositionTracking(stepperController);
 
-    Serial.println("\n[6/13] Running closed loop demo...");
+    Serial.println("\n[6/14] Running closed loop demo...");
     demonstrateClosedLoopControl(stepperController);
 
-    Serial.println("\n[7/13] Running speed measurement demo...");
+    Serial.println("\n[7/14] Running speed measurement demo...");
     demonstrateSpeedMeasurement(stepperController);
 
-    Serial.println("[8/13] Running angle precision test...");
+    Serial.println("[8/14] Running angle precision test...");
     testAnglePrecision(stepperController);
 
-    Serial.println("[9/13] Running max speed test...");
+    Serial.println("[9/14] Running max speed test...");
     testMaxSpeed(stepperController);
 
-    Serial.println("[10/13] Running asynchronous movement test...");
+    Serial.println("[10/14] Running asynchronous movement test...");
     testAsyncMovement(stepperController);
 
-    Serial.println("[11/13] Running rapid target change tests...");
+    Serial.println("[11/14] Running rapid target change tests...");
     testRapidTargetChanges(stepperController);
 
-    Serial.println("[12/13] Running rapid oscillation test...");
+    Serial.println("[12/14] Running rapid oscillation test...");
     testRapidOscillation(stepperController);
 
-    Serial.println("[13/13] Running chasing target test...");
+    Serial.println("[13/14] Running chasing target test...");
     testChasingTarget(stepperController);
 
+    Serial.println("[14/14] Running long run test...");
+    testLongRun(stepperController);
     // Print comprehensive summary
     printTestSummary();
 }
@@ -883,6 +887,12 @@ void processSerialInput() {
                 testChasingTarget(stepperController);
                 printTestSummary();
                 break;
+
+            case TEST_LONG_RUN:
+                clearTestResults();
+                testLongRun(stepperController);
+                printTestSummary();
+                break;                
 
             default:
                 Serial.println("Invalid option. Type 'h' for help.");

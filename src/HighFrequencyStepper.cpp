@@ -450,6 +450,7 @@ bool HighFrequencyStepper::moveToAngleRelative(uint8_t index, double angleDegree
     return moveRelative(index, steps, frequency, blocking);
 }
 
+
 bool HighFrequencyStepper::accelerateToFrequency(uint8_t index, double frequency, bool direction, bool waitForCompletion) { 
     if (!validateStepperIndex(index)) return false;
 
@@ -461,9 +462,8 @@ bool HighFrequencyStepper::accelerateToFrequency(uint8_t index, double frequency
     if (configs[index].invertDirection) {
         direction = !direction;
     }
-    pwmSteppers[index]->setDirection(direction);
-    //tmc2209Drivers[index]->VACTUAL((1.0/0.72)*frequency * (direction ? -1 : 1));
-
+    // Negate frequency for reverse direction
+    frequency = frequencyDirectionToSignedFrequency(frequency, direction);
     pwmSteppers[index]->accelerateToFrequency(frequency);
     
     if (waitForCompletion) {
@@ -518,10 +518,9 @@ bool HighFrequencyStepper::moveAtFrequency(uint8_t index, double frequency, bool
     if (configs[index].invertDirection) {
         direction = !direction;
     }
-    pwmSteppers[index]->setDirection(direction);
-    pwmSteppers[index]->moveAtFrequency(frequency);
+    pwmSteppers[index]->moveAtFrequency(frequencyDirectionToSignedFrequency(frequency, direction));
 
-    Serial.printf("Stepper %d started continuous movement at %.1f Hz\n", index, frequency);
+    //Serial.printf("Stepper %d started continuous movement at %.1f Hz\n", index, frequency);
     
     return true;
 }
@@ -544,10 +543,6 @@ bool HighFrequencyStepper::stop(uint8_t index) {
     status[index].currentFrequency = 0;
     
     updatePosition(index);
-    
-    Serial.print("Stepper ");
-    Serial.print(index);
-    Serial.println(" stopped");
     
     return true;
 }

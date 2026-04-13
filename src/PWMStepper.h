@@ -69,6 +69,17 @@ private:
     void stopTimerMode();
     void onSpeedChange(double frequency);
     void startPWM(double frequency);
+    // Set direction (true = forward, false = reverse)
+    void setDirectionPin(bool dir);
+    String getStateName(StepperState s) const {
+        switch (s) {
+            case STEPPER_OFF: return String("OFF");
+            case STEPPER_IDLE: return String("IDLE");
+            case STEPPER_MOVE_TO_POSITION: return String("MOVE_TO_POSITION");
+            case STEPPER_MOVE_WITH_FREQUENCY: return String("MOVE_WITH_FREQUENCY");
+            default: return String("UNKNOWN");
+        }
+    }
 
     
 public:
@@ -81,8 +92,6 @@ public:
     // Initialize the stepper
     void begin();
     
-    // Set direction (true = forward, false = reverse)
-    void setDirection(bool dir);
     
     // Enable/disable the stepper driver
     void enable();

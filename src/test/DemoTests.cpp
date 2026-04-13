@@ -75,7 +75,7 @@ void demonstrateClosedLoopControl(HighFrequencyStepper& controller, uint8_t inde
     
     for (int i = 0; i < numTargets; i++) {
         int32_t target = targets[i];
-        Serial.print("\nMoving to position: "); Serial.println(target);
+        Serial.printf("\nMoving to position: %d\n", target);
         
         // Simple closed-loop controller
         int attempts = 0;

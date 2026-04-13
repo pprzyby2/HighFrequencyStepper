@@ -129,7 +129,7 @@ void ARDUINO_ISR_ATTR PWMStepper::update() {
     // Handle timer mode stepping if state is active and frequency is above threshold
     // Timer mode is triggered when frequency is below 500 Hz for better low-speed peformance.
     // In timer mode, we manually toggle the step pin at the correct intervals based on the current frequency.
-    if (state != STEPPER_IDLE && state != STEPPER_OFF && mode == MODE_TIMER && currentFreq != 0) {
+    if (mode == MODE_TIMER && state != STEPPER_IDLE && state != STEPPER_OFF && currentFreq != 0) {
         // Calculate how many steps we should have taken since the last speed change based on the current frequency
         uint64_t microsSinceLastSpeedChange = currentTime - lastSpeedChangeMicros;
         double expectedMicrostepPeriod = 1000000.0 / abs(currentFreq * 2); // Period in microseconds for a full step (times 2 because we toggle 0-1 and 1-0 for each step)
@@ -148,7 +148,7 @@ void ARDUINO_ISR_ATTR PWMStepper::update() {
     // This is a safety measure to prevent runaway if something goes wrong with the acceleration/deceleration logic.
     if (state == STEPPER_MOVE_TO_POSITION) {
         bool actualDirection = getDirection(); // true = forward, false = reverse
-        setDirection(actualDirection); // Ensure direction is correct based on target frequency
+        setDirectionPin(actualDirection); // Ensure direction is correct based on target frequency
         // if (actualDirection && currentPosition >= targetPosition || !actualDirection && currentPosition <= targetPosition) {
         //     stopPWM();
         //     state = STEPPER_IDLE;
@@ -165,7 +165,8 @@ void ARDUINO_ISR_ATTR PWMStepper::update() {
         return;
     }
     if (updateNumber % 5000 == 0) {
-        Serial.printf("Current Position: %.2f, Target Position: %d, Current Freq: %.2f, Target Freq: %.2f, Encoder Freq: %.2f\n", currentPosition, targetPosition, currentFreq, targetFreq, encoderFrequency);
+        Serial.printf("Current Position: %.2f, Target Position: %d, Current Freq: %.2f, Target Freq: %.2f, Encoder Freq: %.2f, state: %s\n", 
+            currentPosition, targetPosition, currentFreq, targetFreq, encoderFrequency, getStateName(state).c_str());
     }
 
     // Calculate empirical frequency from encoder counts. We use the position history to calculate how many steps have been taken over a certain time period, 
@@ -175,25 +176,22 @@ void ARDUINO_ISR_ATTR PWMStepper::update() {
     } else {
         encoderFrequency = (currentPosition - positionHistory[updateNumber % MAX_POSITION_HISTORY]) * 1000000.0 / (currentTime - updateTimes[updateNumber % MAX_POSITION_HISTORY]);
     }
-    if (abs(currentFreq) > FREQUENCY_THRESHOLD && abs(encoderFrequency) < 50) {
-        // Possible stall or missed steps
-        //startPWM(encoderFrequency);
-    }
 
-
-    int64_t error = targetPosition - currentPosition;
     // acceleration is in steps/s^2. We need to convert it to frequency change per update interval. 
     // The frequency change per second is acceleration * current frequency, so the frequency change per update interval is acceleration * current frequency * (update interval in seconds). 
-    //We can simplify this by using the fact that frequency is proportional to speed, so we can just use acceleration * (update interval in seconds) as the frequency change per update interval.
+    // We can simplify this by using the fact that frequency is proportional to speed, so we can just use acceleration * (update interval in seconds) as the frequency change per update interval.
     double unitFrequencyChange = acceleration * (freqUpdateInterval * PWM_STEPPER_TIMER_DELAY / 1000000.0);
-    unitFrequencyChange = unitFrequencyChange * min(abs(error), (int64_t)800) / 800.0; // Scale frequency change based on how close we are to the target position, with a max scaling factor of 1 at 800 steps away. This helps to slow down the acceleration as we get closer to the target position for smoother stopping.
-
+    
+    // Error is used in MoveToPosition mode to determine how close we are to the target position and adjust acceleration accordingly. Declaring it here so switch cases can use it if needed.
+    int64_t error;
     switch (state) {
         case STEPPER_OFF:
             return;
         case STEPPER_IDLE:
             return; // Do nothing if not running
         case STEPPER_MOVE_TO_POSITION:
+            error = targetPosition - currentPosition;
+            unitFrequencyChange = unitFrequencyChange * min(abs(error), (int64_t)800) / 800.0; // Scale frequency change based on how close we are to the target position, with a max scaling factor of 1 at 800 steps away. This helps to slow down the acceleration as we get closer to the target position for smoother stopping.
             if (abs(error) >= int(encoderScale) + 1) {
                 // Acceleration should not be zero for moveToPosition mode.
                 if (acceleration != 0) {
@@ -211,19 +209,19 @@ void ARDUINO_ISR_ATTR PWMStepper::update() {
                     } else {
                         targetFreq = maxFreq; // Accelerate
                     }
-                    double targetFreqDirectional = targetFreq * (error > 0 ? 1 : -1); // Determine direction based on error
+                    targetFreq = abs(targetFreq) * (error > 0 ? 1 : -1); // Determine target direction based on error
                     double newFreq = currentFreq;
                 
-                    if (newFreq < targetFreqDirectional) {
+                    if (newFreq < targetFreq) {
                         newFreq += unitFrequencyChange; // Convert delay to seconds
-                        if (newFreq > targetFreqDirectional) {
-                            newFreq = targetFreqDirectional;
+                        if (newFreq > targetFreq) {
+                            newFreq = targetFreq;
                         }
                         // //Serial.printf("Accelerating to %.2f Hz, deceleration distance: %.2f, error: %d\n", newFreq, decelerationDistance, error);                                                                            
                     } else {
                         newFreq -= unitFrequencyChange; // Convert delay to seconds
-                        if (newFreq < targetFreqDirectional) {
-                            newFreq = targetFreqDirectional;
+                        if (newFreq < targetFreq) {
+                            newFreq = targetFreq;
                         }
                     }
                     startPWM(newFreq);
@@ -242,14 +240,14 @@ void ARDUINO_ISR_ATTR PWMStepper::update() {
                     if (newFreq > targetFreq) {
                         newFreq = targetFreq;
                     }
-                    startPWM(newFreq);
                 } else if (newFreq > targetFreq) {
                     newFreq -= unitFrequencyChange; // Convert delay to seconds
                     if (newFreq < targetFreq) {
                         newFreq = targetFreq;
                     }
-                    startPWM(newFreq);
                 }
+
+                startPWM(newFreq);
             } else {
                 onSpeedChange(targetFreq);
             }
@@ -258,12 +256,11 @@ void ARDUINO_ISR_ATTR PWMStepper::update() {
 }
 
 // Set direction
-void PWMStepper::setDirection(bool dir) {
+void PWMStepper::setDirectionPin(bool dir) {
     if (invertDirection) {
         dir = !dir;
     }
     digitalWrite(dirPin, dir ? HIGH : LOW);
-    //onSpeedChange(currentFreq);
 }
 
 // Enable the stepper driver
@@ -291,12 +288,14 @@ void PWMStepper::accelerateToFrequency(double frequency) {
     targetFreq = frequency;
     state = STEPPER_MOVE_WITH_FREQUENCY;
     targetPosition = 0; // Clear target position
+    setDirectionPin(targetFreq > 0); // Set direction based on target frequency
 }
 
 void PWMStepper::moveAtFrequency(double frequency) {
     targetFreq = frequency;
     state = STEPPER_MOVE_WITH_FREQUENCY;
     targetPosition = 0; // Clear target position
+    setDirectionPin(targetFreq > 0); // Set direction based on target frequency
     onSpeedChange(frequency);
     startPWM(frequency);
     Serial.printf("Moving at frequency: %.2f Hz in %s direction with %s mode\n", frequency, getDirection() ? "forward" : "reverse", mode == MODE_LEDC ? "LEDC" : "Timer");
@@ -534,7 +533,7 @@ void PWMStepper::step(uint32_t steps, double frequency, bool dir) {
     if (steps == 0) return;
     
     enable();
-    setDirection(dir);
+    setDirectionPin(dir);
     startPWM(frequency);
     
     // Calculate duration in milliseconds

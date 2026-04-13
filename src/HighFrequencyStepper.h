@@ -187,6 +187,9 @@ public:
     bool stop(uint8_t index);
     bool stopAll();
     bool emergencyStop();
+    double frequencyDirectionToSignedFrequency(double frequency, bool direction) const {
+        return frequency * (direction ? 1 : -1);
+    }
     
     // Position and status methods
     int32_t getPosition(uint8_t index);

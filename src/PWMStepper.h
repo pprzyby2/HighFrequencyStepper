@@ -30,7 +30,7 @@ private:
 
    // Add explicit LEDC config for ESP32-S3 (LS only)
     ledc_mode_t    ledcSpeedMode = LEDC_LOW_SPEED_MODE;
-    ledc_timer_t   ledcTimer     = LEDC_TIMER_0;
+    ledc_timer_t   ledcTimer;
     uint8_t        ledcResolutionBits = 8;   // runtime-selected bits
     ledc_clk_cfg_t ledcClk       = LEDC_USE_APB_CLK; // prefer 80 MHz on S3
 

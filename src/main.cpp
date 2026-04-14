@@ -165,10 +165,10 @@ void setup() {
         Serial.println("Failed to add stepper 0");
         return;
     }
-    // if (!stepperController.addStepper(1, dec_stepper_config)) {
-    //     Serial.println("Failed to add stepper 1");
-    //     return;
-    // }
+    if (!stepperController.addStepper(1, dec_stepper_config)) {
+        Serial.println("Failed to add stepper 1");
+        return;
+    }
 
     // Initialize all steppers
     if (!stepperController.initializeAll()) {

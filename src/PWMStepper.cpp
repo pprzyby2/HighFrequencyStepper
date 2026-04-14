@@ -70,6 +70,22 @@ PWMStepper::PWMStepper(ESP32Encoder* encoder, float encoderScale, uint8_t stepPi
     this->encoderScale = encoderScale;
     this->state = STEPPER_OFF;
     this->mode = MODE_LEDC;
+    switch (ledcChannel) {
+        case 0:
+            this->ledcTimer = LEDC_TIMER_0;
+            break;
+        case 1:
+            this->ledcTimer = LEDC_TIMER_1;
+            break;
+        case 2:
+            this->ledcTimer = LEDC_TIMER_2;
+            break;
+        case 3:
+            this->ledcTimer = LEDC_TIMER_3;
+            break;
+        default:
+            this->ledcTimer = LEDC_TIMER_0; // Default to timer 0 if invalid channel
+    }
 }
 
 // Destructor - ensure proper cleanup
@@ -94,7 +110,7 @@ void PWMStepper::begin() {
     disable();
     
     // Setup LEDC channel
-    ledcSetup(ledcChannel, ledcFrequency, ledcResolution);
+    ledcSetup(ledcChannel, ledcFrequency, 1);
     ledcAttachPin(stepPin, ledcChannel);
     stopLEDCMode();
 

@@ -152,7 +152,9 @@ public:
     uint8_t getStepPin(uint8_t index) const;
     uint8_t getDirPin(uint8_t index) const;
     uint8_t getEnablePin(uint8_t index) const;
-    uint8_t getStepCountPin(uint8_t index) const;
+    uint8_t getEncoderPinA(uint8_t index) const;
+    uint8_t getEncoderPinB(uint8_t index) const;
+    uint8_t getEncoderPinZ(uint8_t index) const;
     uint16_t getMicrostepsPerRevolution(uint8_t index) const;
     double getMaxFrequency(uint8_t index) const;
     double getMaxRPM(uint8_t index) const;

@@ -347,9 +347,19 @@ uint8_t HighFrequencyStepper::getEnablePin(uint8_t index) const {
     return configs[index].enablePin;
 }
 
-uint8_t HighFrequencyStepper::getStepCountPin(uint8_t index) const {
+uint8_t HighFrequencyStepper::getEncoderPinA(uint8_t index) const {
     if (!validateStepperIndex(index)) return 255;
     return configs[index].encoderSettings.pinA;
+}
+
+uint8_t HighFrequencyStepper::getEncoderPinB(uint8_t index) const {
+    if (!validateStepperIndex(index)) return 255;
+    return configs[index].encoderSettings.pinB;
+}
+
+uint8_t HighFrequencyStepper::getEncoderPinZ(uint8_t index) const {
+    if (!validateStepperIndex(index)) return 255;
+    return configs[index].encoderSettings.pinZ;
 }
 
 uint16_t HighFrequencyStepper::getMicrostepsPerRevolution(uint8_t index) const {

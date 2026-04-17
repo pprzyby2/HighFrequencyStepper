@@ -14,7 +14,7 @@ void demonstratePositionTracking(HighFrequencyStepper& controller, uint8_t index
     bool dir = true;
 
     int32_t startPos = controller.getPosition(index);
-    controller.moveAtFrequency(index, 1000, dir);
+    controller.moveAtFrequency(index, 1000 * (dir ? 1 : -1));
     delay(1000); // Exactly 1000 steps
     controller.stop(index);
 
@@ -26,7 +26,7 @@ void demonstratePositionTracking(HighFrequencyStepper& controller, uint8_t index
     dir = false;
 
     startPos = controller.getPosition(index);
-    controller.moveAtFrequency(index, 2000, dir);
+    controller.moveAtFrequency(index, 2000 * (dir ? 1 : -1));
     delay(250); // 500 steps
     controller.stop(index);
 
@@ -36,7 +36,7 @@ void demonstratePositionTracking(HighFrequencyStepper& controller, uint8_t index
     // Demo 3: Position tracking during operation
     Serial.println("\n3. Real-time position tracking (10 seconds)");
     dir = true;
-    controller.moveAtFrequency(index, 1500, dir);
+    controller.moveAtFrequency(index, 1500 * (dir ? 1 : -1));
     
     unsigned long startTime = millis();
     while (millis() - startTime < 10000) {
@@ -92,19 +92,18 @@ void demonstrateClosedLoopControl(HighFrequencyStepper& controller, uint8_t inde
             bool dir = error > 0;
             
             // Calculate speed based on error magnitude
-            uint32_t speed = min(abs(error) * 10, 5000); // Proportional control
-            speed = max(speed, (uint32_t)100); // Minimum speed
+            double speed = min(abs(error) * 10, 5000); // Proportional control
+            speed = max(speed, 100.0); // Minimum speed
+            speed = speed * (dir ? 1 : -1);
 
-            controller.moveAtFrequency(index, speed, dir);
+            controller.moveAtFrequency(index, speed);
             delay(50); // Short move
             controller.stop(index);
 
             attempts++;
             
             if (attempts % 10 == 0) {
-                Serial.print("Position: "); Serial.print(currentPos);
-                Serial.print(", Error: "); Serial.print(error);
-                Serial.print(", Speed: "); Serial.println(speed);
+                Serial.printf("Position: %d, Error: %d, Speed: %.2f, Direction: %s\n", currentPos, error, speed, dir ? "Forward" : "Reverse");
             }
         }
         

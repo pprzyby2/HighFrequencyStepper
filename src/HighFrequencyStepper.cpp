@@ -461,19 +461,15 @@ bool HighFrequencyStepper::moveToAngleRelative(uint8_t index, double angleDegree
 }
 
 
-bool HighFrequencyStepper::accelerateToFrequency(uint8_t index, double frequency, bool direction, bool waitForCompletion) { 
+bool HighFrequencyStepper::accelerateToFrequency(uint8_t index, double frequency, bool waitForCompletion) { 
     if (!validateStepperIndex(index)) return false;
 
     if (frequency > getMaxFrequency(index)) frequency = getMaxFrequency(index);
+    if (frequency < -getMaxFrequency(index)) frequency = -getMaxFrequency(index);
 
     status[index].isMoving = true;
     status[index].currentFrequency = frequency;
     
-    if (configs[index].invertDirection) {
-        direction = !direction;
-    }
-    // Negate frequency for reverse direction
-    frequency = frequencyDirectionToSignedFrequency(frequency, direction);
     pwmSteppers[index]->accelerateToFrequency(frequency);
     
     if (waitForCompletion) {
@@ -507,41 +503,37 @@ bool HighFrequencyStepper::accelerateToFrequency(uint8_t index, double frequency
     return true;
 }
 
-bool HighFrequencyStepper::accelerateToAngularSpeed(uint8_t index, double angularSpeed, bool direction, bool waitForCompletion) {
+bool HighFrequencyStepper::accelerateToAngularSpeed(uint8_t index, double angularSpeed, bool waitForCompletion) {
     if (!validateStepperIndex(index)) return false;
 
     double stepsPerRev = getMicrostepsPerRevolution(index);
     double frequency = (angularSpeed / 360.0) * stepsPerRev; // Convert angular speed (deg/s) to frequency (Hz)
 
-    return accelerateToFrequency(index, frequency, direction, waitForCompletion);
+    return accelerateToFrequency(index, frequency, waitForCompletion);
 }
 
 // Start continuous movement
-bool HighFrequencyStepper::moveAtFrequency(uint8_t index, double frequency, bool direction) {
+bool HighFrequencyStepper::moveAtFrequency(uint8_t index, double frequency) {
     if (!validateStepperIndex(index)) return false;
 
     if (frequency > getMaxFrequency(index)) frequency = getMaxFrequency(index);
+    if (frequency < -getMaxFrequency(index)) frequency = -getMaxFrequency(index);
 
     status[index].isMoving = true;
     status[index].currentFrequency = frequency;
     
-    if (configs[index].invertDirection) {
-        direction = !direction;
-    }
-    pwmSteppers[index]->moveAtFrequency(frequencyDirectionToSignedFrequency(frequency, direction));
+    pwmSteppers[index]->moveAtFrequency(frequency);
 
-    //Serial.printf("Stepper %d started continuous movement at %.1f Hz\n", index, frequency);
-    
     return true;
 }
 
-bool HighFrequencyStepper::moveAtAngularSpeed(uint8_t index, double angularSpeed, bool direction) {
+bool HighFrequencyStepper::moveAtAngularSpeed(uint8_t index, double angularSpeed) {
     if (!validateStepperIndex(index)) return false;
 
     double stepsPerRev = getMicrostepsPerRevolution(index);
     double frequency = (angularSpeed / 360.0) * stepsPerRev; // Convert angular speed (deg/s) to frequency (Hz)
 
-    return moveAtFrequency(index, frequency, direction);
+    return moveAtFrequency(index, frequency);
 }
 
 // Stop specific stepper
@@ -845,18 +837,27 @@ double HighFrequencyStepper::getCurrentFrequency(uint8_t index) {
     return pwmSteppers[index]->getFrequency();
 }
 
-double HighFrequencyStepper::toAngle(uint8_t index, int32_t position) {
+double HighFrequencyStepper::positionToAngle(uint8_t index, int32_t position) {
     if (!validateStepperIndex(index)) return 0.0;
     double stepsPerRev = getMicrostepsPerRevolution(index);
     double angleDegrees = (double(position) / stepsPerRev) * 360.0;
     return angleDegrees;
 }
 
-int32_t HighFrequencyStepper::toPosition(uint8_t index, double angleDegrees) {
+int32_t HighFrequencyStepper::angleToPosition(uint8_t index, double angleDegrees) {
     if (!validateStepperIndex(index)) return 0;
     double stepsPerRev = getMicrostepsPerRevolution(index);
     int32_t position = (int32_t)((angleDegrees / 360.0) * stepsPerRev);
     return position;
+}
+
+double HighFrequencyStepper::rpmToFrequency(uint8_t index, double rpm) const {
+    if (!validateStepperIndex(index)) return 0.0;
+    return (rpm / 60.0) * configs[index].microsteps * configs[index].stepsPerRev;
+}
+double HighFrequencyStepper::frequencyToRPM(uint8_t index, double frequency) const {
+    if (!validateStepperIndex(index)) return 0.0;
+    return (frequency / (configs[index].microsteps * configs[index].stepsPerRev)) * 60.0;
 }
 
 bool HighFrequencyStepper::isAtPosition(uint8_t index, int32_t tolerance) {

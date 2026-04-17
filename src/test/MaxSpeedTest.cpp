@@ -25,7 +25,7 @@ void testMaxSpeed(HighFrequencyStepper& controller) {
             while (positionOk && speed <= controller.getMaxFrequency(i)) {
                 Serial.printf("  Testing speed: %d Hz\n", speed);
 
-                controller.accelerateToFrequency(i, speed, dir, true);
+                controller.accelerateToFrequency(i, speed * (dir ? 1 : -1), true);
                 uint32_t startTime = millis();
                 int32_t startPos = controller.getPosition(i);
                 delay(1000); // Run for 1 second at each speed
@@ -54,7 +54,7 @@ void testMaxSpeed(HighFrequencyStepper& controller) {
                 delay(200); // Brief pause between speeds
 
             }
-            controller.accelerateToFrequency(i, 0, dir, true); // Gently stop the stepper
+            controller.accelerateToFrequency(i, 0, true); // Gently stop the stepper
             delay(1000);
         }
         controller.stop(i); // Stop the stepper
@@ -80,7 +80,7 @@ int32_t getMaxAchievableSpeed(HighFrequencyStepper& controller, uint8_t index) {
     int32_t maxValidSpeed = 0;
     int testTime = 100;
     for (int32_t testSpeed = deltaSpeed; testSpeed <= controller.getMaxFrequency(index); testSpeed += deltaSpeed) {
-        controller.accelerateToFrequency(index, testSpeed, true, true);
+        controller.accelerateToFrequency(index, testSpeed, true);
         controller.setPosition(index, 0);
         delay(testTime); // Run for 100 ms
         int32_t endPos = abs(controller.getPosition(index));

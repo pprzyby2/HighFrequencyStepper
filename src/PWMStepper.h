@@ -128,8 +128,6 @@ public:
     void printStatus() const;
     
     // Utility functions
-    void step(uint32_t steps, double frequency, bool dir);
-    void moveSteps(int32_t steps, double frequency);
     void update();
         
     // Advanced functions

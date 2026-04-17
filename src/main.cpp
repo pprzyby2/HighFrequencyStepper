@@ -299,7 +299,7 @@ void manualControlStart() {
         return;
     }
     
-    if (stepperController.moveAtFrequency(manualControlStepperIndex, manualControlSpeed, manualControlDirection)) {
+    if (stepperController.moveAtFrequency(manualControlStepperIndex, manualControlSpeed * (manualControlDirection ? 1 : -1))) {
         Serial.printf("✓ Moving at %.2f Hz %s\n", manualControlSpeed, manualControlDirection ? "Forward" : "Reverse");
         ledStatus.setStatus(LED_MOVING);
     } else {

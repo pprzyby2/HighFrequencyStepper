@@ -21,7 +21,7 @@ void testHighSpeedAcceleration(HighFrequencyStepper& controller, uint8_t index) 
         Serial.printf("Setting speed to: %.2f Hz\n", speed);
 
 
-        controller.accelerateToFrequency(index, speed, dir, true);
+        controller.accelerateToFrequency(index, speed * (dir ? 1 : -1), true);
         int32_t startPos = controller.getPosition(index);
         uint32_t startTime = millis();
         delay(1000); // Run for 1 second at each speed
@@ -93,7 +93,7 @@ void testLowSpeedPrecision(HighFrequencyStepper& controller, uint8_t index) {
         Serial.printf("Testing low speed: %.1f Hz for %d seconds\n", freq, testTime);
         
         //controller.moveAtFrequency(index, freqHz, dir);
-        controller.accelerateToFrequency(index, freq, dir, true);
+        controller.accelerateToFrequency(index, freq * (dir ? 1 : -1), true);
         delay(5000); // Allow time to stabilize encoder reading
         uint32_t startTime = millis();
         int32_t startPos = controller.getPosition(index);
@@ -149,10 +149,10 @@ void demonstrateSpeedMeasurement(HighFrequencyStepper& controller, uint8_t index
     uint32_t testSpeeds[] = {200, 500, 1000, 1500, 2000};
     
     for (int i = 0; i < 5; i++) {
-        uint32_t setSpeed = testSpeeds[i];
-        Serial.print("Setting speed to: "); Serial.print(setSpeed); Serial.println(" Hz");
+        double setSpeed = testSpeeds[i];
+        Serial.printf("Setting speed to: %.2f Hz\n", setSpeed);
         
-        controller.moveAtFrequency(index, setSpeed, i % 2 == 0);
+        controller.moveAtFrequency(index, setSpeed * (i % 2 == 0 ? 1 : -1));
         
         delay(1000); // Let it stabilize
         
@@ -163,9 +163,9 @@ void demonstrateSpeedMeasurement(HighFrequencyStepper& controller, uint8_t index
             delay(200);
             int32_t endPos = controller.getPosition(index);
             int64_t endTime = millis();
-            int32_t measuredSpeed = (int32_t)((endPos - startPos) * 1000 / (endTime - startTime));
+            double measuredSpeed = (double)(endPos - startPos) * 1000.0 / (endTime - startTime);
             if (measuredSpeed != 0) {
-                Serial.printf("Steps: %d Measured: %d Hz | Error: %d Hz\n", measuredSpeed, abs(measuredSpeed), abs(measuredSpeed) - setSpeed);
+                Serial.printf("Steps: %d Measured: %.2f Hz | Error: %.2f Hz\n", measuredSpeed, abs(measuredSpeed), abs(measuredSpeed) - setSpeed);
             }
             delay(200);
         }

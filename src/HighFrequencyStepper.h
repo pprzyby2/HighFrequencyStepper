@@ -177,21 +177,23 @@ public:
     uint8_t getDriverAddress(uint8_t index) const;
 
     
-    // Movement methods
+    // #### Movement methods #####
+    // position-based movement
     bool moveToPosition(uint8_t index, int32_t position, double frequency = 0, bool blocking = true, bool correctPosition = true);
     bool moveRelative(uint8_t index, int32_t steps, double frequency = 0, bool blocking = true);
     bool moveToAngle(uint8_t index, double angleDegrees, double frequency = 0, bool blocking = true);
     bool moveToAngleRelative(uint8_t index, double angleDegrees, double frequency = 0, bool blocking = true);
-    bool accelerateToFrequency(uint8_t index, double frequency, bool direction, bool waitForCompletion = false);
-    bool accelerateToAngularSpeed(uint8_t index, double angularSpeed, bool direction, bool waitForCompletion = false);
-    bool moveAtFrequency(uint8_t index, double frequency, bool direction = true);
-    bool moveAtAngularSpeed(uint8_t index, double angularSpeed, bool direction = true);
+
+    // speed-based movement
+    bool accelerateToFrequency(uint8_t index, double frequency, bool waitForCompletion = false);
+    bool accelerateToAngularSpeed(uint8_t index, double angularSpeed, bool waitForCompletion = false);
+    bool moveAtFrequency(uint8_t index, double frequency);
+    bool moveAtAngularSpeed(uint8_t index, double angularSpeed);
+
+    // stop methods
     bool stop(uint8_t index);
     bool stopAll();
     bool emergencyStop();
-    double frequencyDirectionToSignedFrequency(double frequency, bool direction) const {
-        return frequency * (direction ? 1 : -1);
-    }
     
     // Position and status methods
     int32_t getPosition(uint8_t index);
@@ -200,8 +202,6 @@ public:
     bool isMoving(uint8_t index);
     bool isAtPosition(uint8_t index, int32_t tolerance = 1);
     double getCurrentFrequency(uint8_t index);
-    double toAngle(uint8_t index, int32_t position);
-    int32_t toPosition(uint8_t index, double angle);
 
     // Enable/disable methods
     bool enableStepper(uint8_t index);
@@ -229,14 +229,10 @@ public:
     // Utility methods
     uint8_t getStepperCount() const { return stepperCount; }
     bool isValidIndex(uint8_t index) const { return validateStepperIndex(index); }
-    double rpmToFrequency(uint8_t index, double rpm) const {
-        if (!validateStepperIndex(index)) return 0.0;
-        return (rpm / 60.0) * configs[index].microsteps * configs[index].stepsPerRev;
-    }
-    double frequencyToRPM(uint8_t index, double frequency) const {
-        if (!validateStepperIndex(index)) return 0.0;
-        return (frequency / (configs[index].microsteps * configs[index].stepsPerRev)) * 60.0;
-    }
+    double positionToAngle(uint8_t index, int32_t position);
+    int32_t angleToPosition(uint8_t index, double angle);
+    double rpmToFrequency(uint8_t index, double rpm) const;
+    double frequencyToRPM(uint8_t index, double frequency) const;
     
     // Configuration access
     StepperConfig getConfig(uint8_t index) const;

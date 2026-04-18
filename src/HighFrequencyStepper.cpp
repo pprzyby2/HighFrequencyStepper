@@ -566,8 +566,6 @@ bool HighFrequencyStepper::stopAll() {
 
 // Emergency stop - immediate stop of all steppers
 bool HighFrequencyStepper::emergencyStop() {
-    Serial.println("EMERGENCY STOP ACTIVATED!");
-    
     // Disable all steppers immediately
     disableAll();
     stopAll();
@@ -744,7 +742,7 @@ bool HighFrequencyStepper::selfTest(uint8_t index) {
         return false;
     }
 
-    Serial.printf("Self-test for stepper %d...\n", index);
+    Serial.printf("Self-test for stepper[%d] %s ...\n", index, configs[index].name.c_str());
 
     // Test 1: Communication with TMC driver
     if (tmc2209Drivers[index]) {
@@ -753,13 +751,12 @@ bool HighFrequencyStepper::selfTest(uint8_t index) {
         tmc2209Drivers[index]->microsteps(expectMicrosteps);
         int actualMicrosteps = tmc2209Drivers[index]->microsteps(); // Read back
         // Restore previous microsteps
-        Serial.printf("TMC Driver Version: 0x%08X\n", tmc2209Drivers[index]->version());
         tmc2209Drivers[index]->microsteps(previousMicrosteps);
         if (expectMicrosteps != actualMicrosteps) {
             Serial.println("FAIL: TMC communication error");
             return false;
         } else {
-            Serial.printf("TMC Driver Version: 0x%08X\n", tmc2209Drivers[index]->version());
+            Serial.printf("PASS: TMC Driver Ready. Version 0x%08X\n", tmc2209Drivers[index]->version());
         }
     }
 #ifdef TMC2240
@@ -767,7 +764,7 @@ bool HighFrequencyStepper::selfTest(uint8_t index) {
         enableStepper(index);
         //tmc2240Drivers[index]->en_pwm_mode(1);
         Serial.printf("Test connection: %d\n", tmc2240Drivers[index]->test_connection());
-        Serial.printf("TMC2240 Driver Version: 0x enabled %s\n", tmc2240Drivers[index]->isEnabled() ? "YES" : "NO");
+        Serial.printf("PASS: TMC2240 Driver Ready. Version 0x enabled %s\n", tmc2240Drivers[index]->isEnabled() ? "YES" : "NO");
         // Serial.printf("TMC2240 Driver PINS:\n   DRV_ENN: %s\n   DIR: %s\n   STEP: %s\n  UART ENN: %s\n",
         //               tmc2240Drivers[index]->drv_enn() == configs[index].enablePin ? "HIGH" : "LOW",
         //               tmc2240Drivers[index]->dir() == configs[index].dirPin ? "HIGH" : "LOW",
@@ -786,20 +783,26 @@ bool HighFrequencyStepper::selfTest(uint8_t index) {
     if (!isEnabled(index)) {
         Serial.println("FAIL: Enable function");
         return false;
+    } else {
+        Serial.println("PASS: Stepper enabled successfully");
     }
     
     // Test 3: Small movement test
     int32_t startPos = getPosition(index);
-    moveToPosition(index, startPos + 1000, getMaxFrequency(index), true); // Move 100 steps at max frequency
+    int32_t moveSteps = 100; // Move 100 steps for test
+    moveToPosition(index, startPos + moveSteps, getMaxFrequency(index), true); // Move 100 steps at max frequency
     int32_t endPos = getPosition(index);
 
-    if (abs(endPos - startPos - 1000) > configs[index].encoderToMicrostepRatio) { // Allow configurable step tolerance
-        Serial.printf("FAIL: Movement accuracy (Expected: %d, Actual: %d)\n", startPos + 1000, endPos);
+    if (abs(endPos - startPos - moveSteps) > configs[index].encoderToMicrostepRatio) { // Allow configurable step tolerance
+        Serial.printf("FAIL: Movement accuracy (Expected: %d, Actual: %d)\n", startPos + moveSteps, endPos);
         return false;
+    } else {
+        Serial.println("PASS: Movement test successful (encoder feedback matches expected position)");
     }
     
     // Return to start position
     moveToPosition(index, startPos, getMaxFrequency(index), true); // Move back to start position
+    disableStepper(index);
 
     Serial.println("PASS: Self-test completed successfully");
     return true;

@@ -534,9 +534,7 @@ void PWMStepper::onSpeedChange(double newSpeed) {
 void PWMStepper::setLEDCResolution(uint8_t resolution) {
     if (resolution >= 1 && resolution <= 16) {
         ledcResolution = resolution;
-        Serial.print("LEDC resolution set to "); 
-        Serial.print(resolution); 
-        Serial.println(" bits");
+        //Serial.printf("LEDC resolution set to %u bits\n", resolution);
     }
 }
 
@@ -544,8 +542,7 @@ void PWMStepper::setLEDCResolution(uint8_t resolution) {
 void PWMStepper::setLEDCChannel(uint8_t channel) {
     if (channel <= 15) {
         ledcChannel = channel;
-        Serial.print("LEDC channel set to "); 
-        Serial.println(channel);
+        //Serial.printf("LEDC channel set to %u\n", channel);
     }
 }
 

@@ -33,6 +33,24 @@ static void ARDUINO_ISR_ATTR onPWMStepperTimer(void *arg)
     }
 }
 
+// Process pending LEDC commands for all steppers - call from loop()
+void processAllStepperCommands() {
+    for (auto stepper : pwmStepperInstances) {
+        stepper->processCommands();
+    }
+}
+
+// FreeRTOS task for processing stepper commands
+static TaskHandle_t stepperCommandTaskHandle = nullptr;
+static const uint32_t COMMAND_TASK_DELAY_MS = 1; // 1ms between command processing
+
+static void stepperCommandTask(void* parameter) {
+    for (;;) {
+        processAllStepperCommands();
+        vTaskDelay(pdMS_TO_TICKS(COMMAND_TASK_DELAY_MS));
+    }
+}
+
 // Helper to try configuring LEDC timer with given bits/clock
 static bool try_config_ledc_timer(ledc_mode_t speedMode,
                                   ledc_timer_t timer,
@@ -53,13 +71,29 @@ void initStepperTimers() {
     if (pwm_stepper_timer != nullptr) {
         return; // Already initialized
     }
+    
+    // Create ISR timer for update()
     const esp_timer_create_args_t periodic_pwm_stepper_timer_args = {
         .callback = &onPWMStepperTimer, // link the call back
         .arg = nullptr,                 // no argument
         .name = "pwm-stepper-timer"      
     };
     ESP_ERROR_CHECK(esp_timer_create(&periodic_pwm_stepper_timer_args, &pwm_stepper_timer));
-    ESP_ERROR_CHECK(esp_timer_start_periodic(pwm_stepper_timer, PWM_STEPPER_TIMER_DELAY)); // Start PWM stepper timer with a delay of 10ms
+    ESP_ERROR_CHECK(esp_timer_start_periodic(pwm_stepper_timer, PWM_STEPPER_TIMER_DELAY));
+    
+    // Create FreeRTOS task for processing LEDC commands (runs on core 1)
+    if (stepperCommandTaskHandle == nullptr) {
+        xTaskCreatePinnedToCore(
+            stepperCommandTask,        // Task function
+            "StepperCmdTask",          // Task name
+            4096,                      // Stack size
+            nullptr,                   // Parameters
+            1,                         // Priority (low, but higher than idle)
+            &stepperCommandTaskHandle, // Task handle
+            1                          // Core 1 (main loop is typically on core 1)
+        );
+        Serial.println("Stepper command processing task started on core 1");
+    }
 }
 
 // Constructor
@@ -236,11 +270,12 @@ void ARDUINO_ISR_ATTR PWMStepper::update() {
                             newFreq = localTargetFreq;
                         }
                     }
-                    startPWM(newFreq);
+                    requestStartPWM(newFreq);
                 }
             } else {
-                stopPWM();
-                state = STEPPER_IDLE;
+                requestStopPWM();
+                pendingNewState = STEPPER_IDLE;
+                pendingStateChange = true;
                 currentFreq = 0;
             }
             break; // Handle below
@@ -260,7 +295,7 @@ void ARDUINO_ISR_ATTR PWMStepper::update() {
                         }
                     }
                 }
-                startPWM(newFreq);
+                requestStartPWM(newFreq);
             }
             break; // Handle below
     }
@@ -360,6 +395,71 @@ void PWMStepper::stopPWM() {
     }
     onSpeedChange(0);
     
+}
+
+// ISR-safe: request PWM start (sets flag, actual LEDC work done in processCommands)
+void PWMStepper::requestStartPWM(double frequency) {
+    pendingNewFrequency = frequency;
+    pendingFrequencyChange = true;
+    pendingStop = false;
+    
+    // Update speed tracking immediately (safe for ISR)
+    onSpeedChange(frequency);
+}
+
+// ISR-safe: request PWM stop (sets flag, actual LEDC work done in processCommands)
+void PWMStepper::requestStopPWM() {
+    pendingStop = true;
+    pendingFrequencyChange = false;
+}
+
+// Process pending PWM commands - call this from main loop, NOT from ISR
+void PWMStepper::processCommands() {
+    // Handle pending state change
+    if (pendingStateChange) {
+        state = pendingNewState;
+        pendingStateChange = false;
+    }
+    
+    // Handle pending stop
+    if (pendingStop) {
+        pendingStop = false;
+        setTargetFrequency(0);
+        if (mode == MODE_LEDC) {
+            stopLEDCMode();
+        } else {
+            stopTimerMode();
+        }
+        digitalWrite(stepPin, LOW);
+        if (state != STEPPER_OFF) {
+            state = STEPPER_IDLE;
+        }
+        onSpeedChange(0);
+        return;
+    }
+    
+    // Handle pending frequency change
+    if (pendingFrequencyChange) {
+        double frequency = pendingNewFrequency;
+        pendingFrequencyChange = false;
+        
+        // Choose mode based on frequency threshold
+        if (abs(frequency) >= FREQUENCY_THRESHOLD) {
+            // High frequency - use LEDC mode
+            if (mode != MODE_LEDC) {
+                stopTimerMode();
+            }
+            mode = MODE_LEDC;
+            startLEDCMode(frequency);
+        } else {
+            // Low frequency - use Timer mode
+            if (mode != MODE_TIMER) {
+                stopLEDCMode();
+            }
+            mode = MODE_TIMER;
+            startTimerMode(frequency);
+        }
+    }
 }
 
 void PWMStepper::setTargetFrequency(double frequency) {

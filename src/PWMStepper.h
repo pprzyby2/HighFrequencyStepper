@@ -67,6 +67,18 @@ private:
     volatile uint64_t lastSpeedChangeMicros;
     volatile uint32_t stepsSinceLastSpeedChange;
     
+    // Deferred command flags for ISR-safe operation
+    // ISR sets these flags, main loop processes them via processCommands()
+    volatile bool pendingFrequencyChange = false;
+    volatile bool pendingStop = false;
+    volatile double pendingNewFrequency = 0;
+    volatile bool pendingStateChange = false;
+    volatile StepperState pendingNewState = STEPPER_OFF;
+    
+    // Internal ISR-safe methods (only set flags, don't call LEDC)
+    void requestStartPWM(double frequency);
+    void requestStopPWM();
+    
     // Mode selection methods
     void startLEDCMode(double frequency);
     void startTimerMode(double frequency);
@@ -133,7 +145,8 @@ public:
     void printStatus() const;
     
     // Utility functions
-    void update();
+    void update();          // Called from ISR - only sets flags, no LEDC calls
+    void processCommands(); // Called from main loop - processes pending LEDC commands
         
     // Advanced functions
     void setLEDCResolution(uint8_t resolution);
@@ -142,5 +155,8 @@ public:
     // Get maximum LEDC frequency for current resolution
     double getMaxLEDCFrequency() const;
 };
+
+// Global function to process pending LEDC commands - call from loop()
+extern void processAllStepperCommands();
 
 #endif // PWMSTEPPER_H

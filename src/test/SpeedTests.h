@@ -10,5 +10,6 @@
 void testHighSpeedAcceleration(HighFrequencyStepper& controller);
 void testLowSpeedPrecision(HighFrequencyStepper& controller);
 void demonstrateSpeedMeasurement(HighFrequencyStepper& controller);
+void testMultiMotorIndependentSpeeds(HighFrequencyStepper& controller);
 
 #endif // SPEEDTESTS_H

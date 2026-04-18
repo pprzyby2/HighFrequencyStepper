@@ -180,3 +180,155 @@ void demonstrateSpeedMeasurement(HighFrequencyStepper& controller) {
         demonstrateSpeedMeasurement(controller, i);
     }
 }
+
+/**
+ * Test that multiple motors can run simultaneously at different speeds.
+ * This verifies that different LEDC timers are used for each motor.
+ * 
+ * If all motors share the same timer, changing one motor's speed would
+ * affect the other motors' speeds as well.
+ */
+void testMultiMotorIndependentSpeeds(HighFrequencyStepper& controller) {
+    Serial.println("\n=== Multi-Motor Independent Speed Test (LEDC Timer Test) ===");
+    
+    uint8_t stepperCount = controller.getStepperCount();
+    if (stepperCount < 2) {
+        Serial.println("ERROR: This test requires at least 2 steppers.");
+        addTestResult("System", "Multi-Motor Speed Test", false, "Requires at least 2 steppers");
+        return;
+    }
+    
+    Serial.printf("Testing %d motors running at different speeds simultaneously...\n", stepperCount);
+    
+    // Define different speeds for each motor (in Hz)
+    double testSpeeds[] = {1000.0, 2000.0, 3000.0, 4000.0};  // Different speeds for up to 4 motors
+    double measuredSpeeds[MAX_STEPPERS] = {0};
+    int32_t startPositions[MAX_STEPPERS] = {0};
+    int32_t endPositions[MAX_STEPPERS] = {0};
+    
+    // Reset positions and enable all steppers
+    for (uint8_t i = 0; i < stepperCount; i++) {
+        controller.setPosition(i, 0);
+        controller.enableStepper(i);
+    }
+    
+    // Start all motors at different speeds
+    Serial.println("\nStarting motors at different frequencies:");
+    for (uint8_t i = 0; i < stepperCount; i++) {
+        double targetSpeed = testSpeeds[i % 4];
+        // Clamp to max frequency if needed
+        if (targetSpeed > controller.getMaxFrequency(i)) {
+            targetSpeed = controller.getMaxFrequency(i) * 0.5;
+        }
+        testSpeeds[i] = targetSpeed;
+        
+        Serial.printf("  Motor %d (%s): %.0f Hz\n", i, controller.getName(i).c_str(), targetSpeed);
+        controller.moveAtFrequency(i, targetSpeed);
+    }
+    
+    // Let motors stabilize
+    Serial.println("\nWaiting for motors to stabilize...");
+    delay(2000);
+    
+    // Record start positions
+    for (uint8_t i = 0; i < stepperCount; i++) {
+        startPositions[i] = controller.getPosition(i);
+    }
+    
+    // Run for test duration
+    int testDurationMs = 5000;
+    Serial.printf("\nRunning for %d ms...\n", testDurationMs);
+    
+    uint32_t startTime = millis();
+    
+    // Periodically print status during test
+    for (int t = 0; t < testDurationMs / 1000; t++) {
+        delay(1000);
+        Serial.printf("  Time: %ds - ", t + 1);
+        for (uint8_t i = 0; i < stepperCount; i++) {
+            int32_t pos = controller.getPosition(i);
+            Serial.printf("M%d: %d ", i, pos);
+        }
+        Serial.println();
+    }
+    
+    uint32_t endTime = millis();
+    uint32_t actualDuration = endTime - startTime;
+    
+    // Record end positions
+    for (uint8_t i = 0; i < stepperCount; i++) {
+        endPositions[i] = controller.getPosition(i);
+    }
+    
+    // Stop all motors
+    controller.stopAll();
+    
+    // Calculate and verify measured speeds
+    Serial.println("\n=== Results ===");
+    Serial.printf("Actual test duration: %d ms\n\n", actualDuration);
+    
+    bool allPassed = true;
+    int passedCount = 0;
+    
+    for (uint8_t i = 0; i < stepperCount; i++) {
+        int32_t stepsMoved = abs(endPositions[i] - startPositions[i]);
+        measuredSpeeds[i] = (double)stepsMoved * 1000.0 / actualDuration;
+        
+        double expectedSpeed = testSpeeds[i];
+        double speedError = abs(measuredSpeeds[i] - expectedSpeed);
+        double errorPercent = (speedError / expectedSpeed) * 100.0;
+        
+        // Allow 10% error tolerance
+        bool passed = (errorPercent <= 10.0);
+        
+        Serial.printf("Motor %d (%s):\n", i, controller.getName(i).c_str());
+        Serial.printf("  Target speed:   %.0f Hz\n", expectedSpeed);
+        Serial.printf("  Measured speed: %.0f Hz\n", measuredSpeeds[i]);
+        Serial.printf("  Error:          %.1f%% %s\n", errorPercent, passed ? "PASS" : "FAIL");
+        Serial.printf("  Steps moved:    %d\n\n", stepsMoved);
+        
+        if (passed) passedCount++;
+        if (!passed) allPassed = false;
+        
+        String testName = "Motor " + String(i) + " Independent Speed";
+        addTestResult(controller.getName(i), testName, passed,
+                      "Target: " + String(expectedSpeed, 0) + " Hz, Measured: " + String(measuredSpeeds[i], 0) + " Hz",
+                      100.0 - errorPercent);
+    }
+    
+    // Check speed ratios between motors to verify independence
+    Serial.println("=== Speed Ratio Verification ===");
+    bool ratiosCorrect = true;
+    
+    for (uint8_t i = 0; i < stepperCount - 1; i++) {
+        for (uint8_t j = i + 1; j < stepperCount; j++) {
+            double expectedRatio = testSpeeds[i] / testSpeeds[j];
+            double measuredRatio = measuredSpeeds[i] / measuredSpeeds[j];
+            double ratioError = abs(measuredRatio - expectedRatio) / expectedRatio * 100.0;
+            
+            bool ratioOk = (ratioError <= 15.0);  // 15% tolerance for ratio
+            
+            Serial.printf("  M%d/M%d ratio - Expected: %.2f, Measured: %.2f, Error: %.1f%% %s\n",
+                          i, j, expectedRatio, measuredRatio, ratioError, ratioOk ? "OK" : "FAIL");
+            
+            if (!ratioOk) ratiosCorrect = false;
+        }
+    }
+    
+    // Overall test result
+    bool overallPassed = allPassed && ratiosCorrect;
+    
+    Serial.println("\n=== Summary ===");
+    Serial.printf("Motors tested: %d\n", stepperCount);
+    Serial.printf("Speed tests passed: %d/%d\n", passedCount, stepperCount);
+    Serial.printf("Speed ratios correct: %s\n", ratiosCorrect ? "YES" : "NO");
+    Serial.printf("Overall result: %s\n", overallPassed ? "PASS" : "FAIL");
+    
+    if (!overallPassed) {
+        Serial.println("\nWARNING: If motors have similar measured speeds regardless of target,");
+        Serial.println("         it may indicate they are sharing the same LEDC timer.");
+    }
+    
+    addTestResult("System", "Multi-Motor Independent Speeds Overall", overallPassed,
+                  String(passedCount) + "/" + String(stepperCount) + " motors passed, ratios " + (ratiosCorrect ? "OK" : "FAIL"));
+}

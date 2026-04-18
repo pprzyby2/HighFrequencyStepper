@@ -85,6 +85,7 @@ enum TestOption {
     SHOW_SYSTEM_STATUS = 16,
     LED_STATUS_TEST = 17,
     MANUAL_CONTROL = 18,
+    TEST_MULTI_MOTOR_SPEEDS = 19,
     RESET_POSITION = 0
 };
 
@@ -158,7 +159,7 @@ void setup() {
         .rmsCurrent = 1000,       // RMS current (mA)
         .maxRPM = 300,  // Max rotation speed
         .rpsAcceleration = 3.0,
-        .ledcChannel = 0        // LEDC channel        
+        .ledcChannel = 1        // LEDC channel        
     };
 
     if (!stepperController.addStepper(0, ra_stepper_config)) {
@@ -221,6 +222,7 @@ void printTestMenu() {
     Serial.println("16. Show System Status");
     Serial.println("17. LED Status Test");
     Serial.println("18. Manual Motor Control");
+    Serial.println("19. Multi-Motor Independent Speeds (LEDC Timer Test)");
     Serial.println("0. Reset Position Counter");
     Serial.println("\nEnter test number (or 'h' for help): ");
 }
@@ -892,7 +894,13 @@ void processSerialInput() {
                 clearTestResults();
                 testLongRun(stepperController);
                 printTestSummary();
-                break;                
+                break;
+
+            case TEST_MULTI_MOTOR_SPEEDS:
+                clearTestResults();
+                testMultiMotorIndependentSpeeds(stepperController);
+                printTestSummary();
+                break;
 
             default:
                 Serial.println("Invalid option. Type 'h' for help.");

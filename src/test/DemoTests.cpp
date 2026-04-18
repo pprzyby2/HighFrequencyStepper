@@ -148,7 +148,7 @@ void testAsyncMovement(HighFrequencyStepper& stepper) {
         int maxFreq = stepper.getMaxFrequency(i); // Just to ensure it's configured
         int fullCircle = stepper.getMicrostepsPerRevolution(i);
         printf("Stepper %d max frequency: %d Hz, steps/rev: %d, target 50 circles: %d\n", i, maxFreq, fullCircle, fullCircle * 50);
-        stepper.moveToPosition(i, fullCircle * 50 * pow(-1, i), maxFreq, false, false); // Move at max frequency
+        stepper.moveToPosition(i, fullCircle * 50 * pow(-1, i), maxFreq, false); // Move at max frequency
     }
     
     // Monitor progress

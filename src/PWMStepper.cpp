@@ -117,12 +117,8 @@ void PWMStepper::begin() {
     pwmStepperInstances.push_back(this);
     initStepperTimers();
 
-    positionHistory.reserve(MAX_POSITION_HISTORY);
-    updateTimes.reserve(MAX_POSITION_HISTORY);
-    for (size_t i = 0; i < MAX_POSITION_HISTORY; ++i) {
-        positionHistory[i] = encoder->getCount();
-        updateTimes[i] = micros();
-    }
+    positionHistory.resize(MAX_POSITION_HISTORY, encoder->getCount());
+    updateTimes.resize(MAX_POSITION_HISTORY, micros());
     state = STEPPER_IDLE;
 
     Serial.println("PWMStepper initialized successfully!");
@@ -135,6 +131,13 @@ void PWMStepper::begin() {
 }
 
 void ARDUINO_ISR_ATTR PWMStepper::update() {
+    // Read 64-bit variables atomically at the start of ISR
+    portENTER_CRITICAL_ISR(&mux);
+    int64_t localTargetPosition = targetPosition;
+    double localTargetFreq = targetFreq;
+    double localAcceleration = acceleration;
+    portEXIT_CRITICAL_ISR(&mux);
+    
     float currentPosition = encoderScale * encoder->getCount();
     uint64_t currentTime = micros();
 
@@ -186,7 +189,7 @@ void ARDUINO_ISR_ATTR PWMStepper::update() {
     // acceleration is in steps/s^2. We need to convert it to frequency change per update interval. 
     // The frequency change per second is acceleration * current frequency, so the frequency change per update interval is acceleration * current frequency * (update interval in seconds). 
     // We can simplify this by using the fact that frequency is proportional to speed, so we can just use acceleration * (update interval in seconds) as the frequency change per update interval.
-    double unitFrequencyChange = acceleration * (freqUpdateInterval * PWM_STEPPER_TIMER_DELAY / 1000000.0);
+    double unitFrequencyChange = localAcceleration * (freqUpdateInterval * PWM_STEPPER_TIMER_DELAY / 1000000.0);
     
     // Error is used in MoveToPosition mode to determine how close we are to the target position and adjust acceleration accordingly. Declaring it here so switch cases can use it if needed.
     int64_t error;
@@ -196,38 +199,38 @@ void ARDUINO_ISR_ATTR PWMStepper::update() {
         case STEPPER_IDLE:
             return; // Do nothing if not running
         case STEPPER_MOVE_TO_POSITION:
-            error = targetPosition - currentPosition;
+            error = localTargetPosition - currentPosition;
             unitFrequencyChange = unitFrequencyChange * min(abs(error), (int64_t)800) / 800.0; // Scale frequency change based on how close we are to the target position, with a max scaling factor of 1 at 800 steps away. This helps to slow down the acceleration as we get closer to the target position for smoother stopping.
             if (abs(error) >= int(encoderScale) + 1) {
                 // Acceleration should not be zero for moveToPosition mode.
-                if (acceleration != 0) {
+                if (localAcceleration != 0) {
                     // Calculate how many updates it would take to decelerate from current frequency to 0 at the given acceleration. 
                     // This gives us an estimate of how long it will take to stop if we start decelerating now. 
                     // We can then calculate how far we would travel during that time at the current speed, which gives us an estimate of the deceleration distance. 
                     // If we are within that distance from the target position, we should start decelerating to avoid overshooting.                    
                     double decelerationUpdates = (abs(currentFreq) / unitFrequencyChange);
                     double estimatedDecelerationTime = decelerationUpdates * (freqUpdateInterval * PWM_STEPPER_TIMER_DELAY / 1000000.0);
-                    decelerationDistance = acceleration * pow(estimatedDecelerationTime, 2) / 2.0; // (currentFreq * currentFreq) / (2.0 * acceleration);
+                    decelerationDistance = localAcceleration * pow(estimatedDecelerationTime, 2) / 2.0; // (currentFreq * currentFreq) / (2.0 * acceleration);
                     if (abs(error) < decelerationDistance * 1.5 || abs(error) < 50) { // Add slight buffer to deceleration
-                        targetFreq = 400; // Decelerate below timer mode threshold for better low-speed control. We can also calculate a dynamic target frequency based on how close we are to the target position, but for simplicity we will just use a fixed low frequency here.
+                        localTargetFreq = 400; // Decelerate below timer mode threshold for better low-speed control. We can also calculate a dynamic target frequency based on how close we are to the target position, but for simplicity we will just use a fixed low frequency here.
                         //decelerating = true;
-                        //currentFreq = targetFreq;
+                        //currentFreq = localTargetFreq;
                     } else {
-                        targetFreq = maxFreq; // Accelerate
+                        localTargetFreq = maxFreq; // Accelerate
                     }
-                    targetFreq = abs(targetFreq) * (error > 0 ? 1 : -1); // Determine target direction based on error
+                    localTargetFreq = abs(localTargetFreq) * (error > 0 ? 1 : -1); // Determine target direction based on error
                     double newFreq = currentFreq;
                 
-                    if (newFreq < targetFreq) {
+                    if (newFreq < localTargetFreq) {
                         newFreq += unitFrequencyChange; // Convert delay to seconds
-                        if (newFreq > targetFreq) {
-                            newFreq = targetFreq;
+                        if (newFreq > localTargetFreq) {
+                            newFreq = localTargetFreq;
                         }
                         // //Serial.printf("Accelerating to %.2f Hz, deceleration distance: %.2f, error: %d\n", newFreq, decelerationDistance, error);                                                                            
                     } else {
                         newFreq -= unitFrequencyChange; // Convert delay to seconds
-                        if (newFreq < targetFreq) {
-                            newFreq = targetFreq;
+                        if (newFreq < localTargetFreq) {
+                            newFreq = localTargetFreq;
                         }
                     }
                     startPWM(newFreq);
@@ -241,16 +244,16 @@ void ARDUINO_ISR_ATTR PWMStepper::update() {
         case STEPPER_MOVE_WITH_FREQUENCY:
             {
                 double newFreq = currentFreq;
-                if (acceleration != 0) {
-                    if (newFreq < targetFreq) {
+                if (localAcceleration != 0) {
+                    if (newFreq < localTargetFreq) {
                         newFreq += unitFrequencyChange; // Convert delay to seconds
-                        if (newFreq > targetFreq) {
-                            newFreq = targetFreq;
+                        if (newFreq > localTargetFreq) {
+                            newFreq = localTargetFreq;
                         }
-                    } else if (newFreq > targetFreq) {
+                    } else if (newFreq > localTargetFreq) {
                         newFreq -= unitFrequencyChange; // Convert delay to seconds
-                        if (newFreq < targetFreq) {
-                            newFreq = targetFreq;
+                        if (newFreq < localTargetFreq) {
+                            newFreq = localTargetFreq;
                         }
                     }
                 }
@@ -357,15 +360,21 @@ void PWMStepper::stopPWM() {
 }
 
 void PWMStepper::setTargetFrequency(double frequency) {
+    portENTER_CRITICAL(&mux);
     targetFreq = frequency;
+    portEXIT_CRITICAL(&mux);
 }
 
 void PWMStepper::setAcceleration(double accel) {
+    portENTER_CRITICAL(&mux);
     acceleration = accel;
+    portEXIT_CRITICAL(&mux);
 }
 
 void PWMStepper::setTargetPosition(int64_t position) {
+    portENTER_CRITICAL(&mux);
     targetPosition = position;
+    portEXIT_CRITICAL(&mux);
 }
 
 // Get current status
@@ -393,7 +402,17 @@ bool PWMStepper::getDirection() const {
 }
 
 double PWMStepper::getFrequency() const {
-    return currentFreq;
+    portENTER_CRITICAL(&mux);
+    double freq = currentFreq;
+    portEXIT_CRITICAL(&mux);
+    return freq;
+}
+
+int64_t PWMStepper::getTargetPosition() const {
+    portENTER_CRITICAL(&mux);
+    int64_t pos = targetPosition;
+    portEXIT_CRITICAL(&mux);
+    return pos;
 }
 
 StepperMode PWMStepper::getMode() const {

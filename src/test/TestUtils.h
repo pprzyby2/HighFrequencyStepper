@@ -16,9 +16,9 @@ struct TestResult {
     float accuracy;
 };
 
-// Global test results tracking
-static TestResult testResults[150]; // Increased capacity
-static int testCount = 0;
+// Global test results tracking (defined in TestUtils.cpp)
+extern TestResult testResults[150];
+extern int testCount;
 
 // Test utility functions
 void addTestResult(String stepperName, String testName, bool passed, String details = "", float accuracy = 0.0);

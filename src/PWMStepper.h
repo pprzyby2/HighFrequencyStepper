@@ -40,6 +40,10 @@ private:
     bool stepperEnabledHigh; // true if enable pin is active HIGH
     //bool direction;  // true = forward, false = reverse
     bool invertDirection = false; // true = invert direction logic
+    
+    // Spinlock for 64-bit variable synchronization between ISR and main thread
+    mutable portMUX_TYPE mux = portMUX_INITIALIZER_UNLOCKED;
+    
     volatile double currentFreq = 0;
     volatile double encoderFrequency = 0;
     volatile double acceleration;
@@ -119,7 +123,7 @@ public:
     bool isEnabled() const;
     bool getDirection() const;
     double getFrequency() const;
-    int64_t getTargetPosition() const { return targetPosition; }
+    int64_t getTargetPosition() const;
     bool isMoving() const { return state == STEPPER_MOVE_TO_POSITION || state == STEPPER_MOVE_WITH_FREQUENCY; }
     StepperMode getMode() const;
     int64_t getPosition() const {

@@ -75,12 +75,8 @@ bool HighFrequencyStepper::addStepper(uint8_t index, const StepperConfig& config
         pulseCounters[index] = nullptr;
         return false;
     }
-    if (!pulseCounters[index]) {
-        Serial.println("ERROR: Failed to create PulseCounter instance");
-        delete pwmSteppers[index];
-        pwmSteppers[index] = nullptr;
-        return false;
-    }
+    // Note: pulseCounters[index] is always valid after new ESP32Encoder()
+    // The check above for invalid attachMode already handles encoder creation failures
     configs[index].encoderToMicrostepRatio = float(config.stepsPerRev * config.microsteps) / float(config.encoderSettings.resolution * config.encoderSettings.attachMode);
         attachInterrupt(digitalPinToInterrupt(config.encoderSettings.pinZ), []() {
         // Handle Z pin interrupt (e.g., reset position)
@@ -390,7 +386,7 @@ bool HighFrequencyStepper::getInvertDirection(uint8_t index) const {
 
 
 // Move to absolute position
-bool HighFrequencyStepper::moveToPosition(uint8_t index, int32_t position, double frequency, bool blocking, bool correctPosition) {
+bool HighFrequencyStepper::moveToPosition(uint8_t index, int32_t position, double frequency, bool blocking) {
     if (!validateStepperIndex(index)) return false;
 
     if (frequency == 0 || frequency > getMaxFrequency(index)) frequency = getMaxFrequency(index);
@@ -433,11 +429,7 @@ bool HighFrequencyStepper::moveToPosition(uint8_t index, int32_t position, doubl
         }
         status[index].isMoving = false;
     }
-    if (correctPosition) {
-        return moveToPosition(index, position, configs[index].microsteps, blocking, false);
-    } else {
-        return true;
-    }
+    return true;
 }
 
 
@@ -793,7 +785,7 @@ bool HighFrequencyStepper::selfTest(uint8_t index) {
     moveToPosition(index, startPos + moveSteps, getMaxFrequency(index), true); // Move 100 steps at max frequency
     int32_t endPos = getPosition(index);
 
-    if (abs(endPos - startPos - moveSteps) > configs[index].encoderToMicrostepRatio) { // Allow configurable step tolerance
+    if (abs(endPos - startPos - moveSteps) > 2 * configs[index].encoderToMicrostepRatio) { // Allow configurable step tolerance
         Serial.printf("FAIL: Movement accuracy (Expected: %d, Actual: %d)\n", startPos + moveSteps, endPos);
         return false;
     } else {

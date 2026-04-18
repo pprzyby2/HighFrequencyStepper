@@ -39,14 +39,14 @@ void testRapidTargetChanges(HighFrequencyStepper& stepper) {
         int changeInterval = 500;  // ms between target changes
         
         // Start moving (non-blocking)
-        stepper.moveToPosition(index, initialTarget, testFreq, false, false);
+        stepper.moveToPosition(index, initialTarget, testFreq, false);
         
         // Rapidly update target position while moving
         uint32_t startTime = millis();
         for (int i = 1; i <= numChanges; i++) {
             delay(changeInterval);
             int32_t intermediateTarget = initialTarget + (finalTarget - initialTarget) * i / numChanges;
-            stepper.moveToPosition(index, intermediateTarget, testFreq, false, false);
+            stepper.moveToPosition(index, intermediateTarget, testFreq, false);
             Serial.printf("  [%d ms] Target changed to: %d\n", millis() - startTime, intermediateTarget);
         }
         
@@ -87,19 +87,19 @@ void testRapidTargetChanges(HighFrequencyStepper& stepper) {
         
         for (int i = 0; i < reversalCount; i++) {
             // Move forward
-            stepper.moveToPosition(index, pos1, testFreq, false, false);
+            stepper.moveToPosition(index, pos1, testFreq, false);
             Serial.printf("  [%d ms] Target: +%d (forward)\n", millis() - startTime, pos1);
             delay(100);  // Brief delay before reversal
             
             // Move backward
-            stepper.moveToPosition(index, pos2, testFreq, false, false);
+            stepper.moveToPosition(index, pos2, testFreq, false);
             Serial.printf("  [%d ms] Target: %d (backward)\n", millis() - startTime, pos2);
             delay(100);
         }
         
         // Final target is pos2 (-90 degrees), wait for completion
         int32_t reversalFinalTarget = pos2;
-        stepper.moveToPosition(index, reversalFinalTarget, testFreq, true, false);
+        stepper.moveToPosition(index, reversalFinalTarget, testFreq, true);
         
         finalPos = stepper.getPosition(index);
         error = abs(reversalFinalTarget - finalPos);
@@ -131,14 +131,14 @@ void testRapidTargetChanges(HighFrequencyStepper& stepper) {
         // Send rapid burst of position updates with no delay
         for (int i = 1; i <= burstCount; i++) {
             int32_t burstTarget = (burstFinalTarget * i) / burstCount;
-            stepper.moveToPosition(index, burstTarget, testFreq, false, false);
+            stepper.moveToPosition(index, burstTarget, testFreq, false);
         }
         
         uint32_t burstTime = millis() - startTime;
         Serial.printf("  Sent %d target updates in %d ms\n", burstCount, burstTime);
         
         // Wait for completion
-        stepper.moveToPosition(index, burstFinalTarget, testFreq, true, false);
+        stepper.moveToPosition(index, burstFinalTarget, testFreq, true);
         
         finalPos = stepper.getPosition(index);
         error = abs(burstFinalTarget - finalPos);
@@ -194,12 +194,12 @@ void testRapidOscillation(HighFrequencyStepper& stepper) {
             int interval = initialInterval - (initialInterval - minInterval) * i / (oscillations - 1);
             
             // Move to positive amplitude
-            stepper.moveToPosition(index, amplitude, testFreq, false, false);
+            stepper.moveToPosition(index, amplitude, testFreq, false);
             totalMoves++;
             delay(interval);
             
             // Move to negative amplitude
-            stepper.moveToPosition(index, -amplitude, testFreq, false, false);
+            stepper.moveToPosition(index, -amplitude, testFreq, false);
             totalMoves++;
             delay(interval);
             
@@ -208,7 +208,7 @@ void testRapidOscillation(HighFrequencyStepper& stepper) {
         }
         
         // Return to center
-        stepper.moveToPosition(index, 0, testFreq, true, false);
+        stepper.moveToPosition(index, 0, testFreq, true);
         
         uint32_t totalTime = millis() - startTime;
         int32_t finalPos = stepper.getPosition(index);
@@ -269,7 +269,7 @@ void testChasingTarget(HighFrequencyStepper& stepper) {
             int32_t targetPos = (int32_t)(amplitude * sin(2.0 * PI * frequency * elapsed));
             
             // Update target position
-            stepper.moveToPosition(index, targetPos, testFreq, false, false);
+            stepper.moveToPosition(index, targetPos, testFreq, false);
             delay(updateInterval);
             
             // Track error
@@ -339,7 +339,7 @@ void testLongRun(HighFrequencyStepper& stepper) {
         uint32_t startTime = millis();
         
         // Start moving to target position
-        stepper.moveToPosition(index, targetPos, testFreq, false, false);
+        stepper.moveToPosition(index, targetPos, testFreq, false);
         
         // Monitor during run
         int stage = 0;
@@ -348,10 +348,10 @@ void testLongRun(HighFrequencyStepper& stepper) {
             Serial.printf("  Time: %d s, Current position: %d\n", (millis() - startTime) / 1000, currentPos);
             
             if (stage == 0 && currentPos > targetPos * 0.7) { // Once we are 70% of the way there, change target to 30% to force a rapid change in direction and test stability
-                stepper.moveToPosition(index, targetPos * 0.3, testFreq, false, false);
+                stepper.moveToPosition(index, targetPos * 0.3, testFreq, false);
                 stage = 1;
             } else if (stage == 1 && currentPos < targetPos * 0.4) {
-                stepper.moveToPosition(index, targetPos, testFreq, false, false);
+                stepper.moveToPosition(index, targetPos, testFreq, false);
                 stage = 2;                
             }
             delay(500); // Log every 0.5 seconds
@@ -378,13 +378,13 @@ void testLongRun(HighFrequencyStepper& stepper) {
         startTime = millis();
         
         // Start moving to target position
-        stepper.moveToPosition(index, 0, testFreq, false, false);
+        stepper.moveToPosition(index, 0, testFreq, false);
         
         // Monitor during run
         while (millis() - startTime < runDuration && stepper.isMoving(index)) {
             int32_t currentPos = stepper.getPosition(index);
             Serial.printf("  Time: %d s, Current position: %d\n", (millis() - startTime) / 1000, currentPos);
-            stepper.moveToPosition(index, 0, testFreq, false, false);
+            stepper.moveToPosition(index, 0, testFreq, false);
             delay(500); // Log every 0.5 seconds
         }
         

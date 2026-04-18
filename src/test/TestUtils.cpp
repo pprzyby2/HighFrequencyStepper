@@ -1,5 +1,9 @@
 #include "TestUtils.h"
 
+// Global test results storage
+TestResult testResults[150];
+int testCount = 0;
+
 void addTestResult(String stepperName, String testName, bool passed, String details, float accuracy) {
     if (testCount < 150) {
         testResults[testCount].stepperName = stepperName;

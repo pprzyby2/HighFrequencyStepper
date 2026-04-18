@@ -10,14 +10,21 @@
 
 
 
-// Global instance pointer for timer callback
-PWMStepper* currentStepperInstance = nullptr;
-
-// Define frequency threshold (512 Hz)
+// Define frequency threshold (512 Hz) - below this we use timer mode for better low-speed control
 const double PWMStepper::FREQUENCY_THRESHOLD = 512.0;
+const double PWMStepper::DECELERATION_FREQUENCY = 400.0; // Target freq when decelerating near position
+
+// Constants for position control
+static const int64_t DECEL_SCALING_DISTANCE = 800; // Distance (steps) over which acceleration scales
+static const int64_t MIN_DECEL_ERROR = 50; // Minimum error (steps) before starting deceleration
+
 const uint64_t PWM_STEPPER_TIMER_DELAY = 500; // 0.5ms
 esp_timer_handle_t pwm_stepper_timer = nullptr;
 static std::vector<PWMStepper*> pwmStepperInstances;
+
+// LEDC timer allocation tracking
+static const uint8_t MAX_LEDC_TIMERS = 4;
+static uint8_t allocatedLedcTimers = 0;
 
 static void ARDUINO_ISR_ATTR onPWMStepperTimer(void *arg)
 {
@@ -70,31 +77,27 @@ PWMStepper::PWMStepper(ESP32Encoder* encoder, float encoderScale, uint8_t stepPi
     this->encoderScale = encoderScale;
     this->state = STEPPER_OFF;
     this->mode = MODE_LEDC;
-    switch (ledcChannel) {
-        case 0:
-            this->ledcTimer = LEDC_TIMER_0;
-            break;
-        case 1:
-            this->ledcTimer = LEDC_TIMER_1;
-            break;
-        case 2:
-            this->ledcTimer = LEDC_TIMER_2;
-            break;
-        case 3:
-            this->ledcTimer = LEDC_TIMER_3;
-            break;
-        default:
-            this->ledcTimer = LEDC_TIMER_0; // Default to timer 0 if invalid channel
+    
+    // Allocate LEDC timer sequentially
+    if (allocatedLedcTimers >= MAX_LEDC_TIMERS) {
+        Serial.println("ERROR: All 4 LEDC timers are already allocated! Cannot create more PWMStepper instances.");
+        this->ledcTimer = LEDC_TIMER_0; // Fallback, but won't work correctly
+    } else {
+        this->ledcTimer = static_cast<ledc_timer_t>(allocatedLedcTimers);
+        allocatedLedcTimers++;
+        Serial.printf("Allocated LEDC timer %d (total: %d/%d)\n", this->ledcTimer, allocatedLedcTimers, MAX_LEDC_TIMERS);
     }
 }
 
 // Destructor - ensure proper cleanup
 PWMStepper::~PWMStepper() {
     stopPWM();
-    if (currentStepperInstance == this) {
-        currentStepperInstance = nullptr;
-    }
     pwmStepperInstances.erase(std::remove(pwmStepperInstances.begin(), pwmStepperInstances.end(), this), pwmStepperInstances.end());
+    
+    // Release LEDC timer
+    if (allocatedLedcTimers > 0) {
+        allocatedLedcTimers--;
+    }
 }
 
 // Initialize the stepper
@@ -200,7 +203,7 @@ void ARDUINO_ISR_ATTR PWMStepper::update() {
             return; // Do nothing if not running
         case STEPPER_MOVE_TO_POSITION:
             error = localTargetPosition - currentPosition;
-            unitFrequencyChange = unitFrequencyChange * min(abs(error), (int64_t)800) / 800.0; // Scale frequency change based on how close we are to the target position, with a max scaling factor of 1 at 800 steps away. This helps to slow down the acceleration as we get closer to the target position for smoother stopping.
+            unitFrequencyChange = unitFrequencyChange * min(abs(error), DECEL_SCALING_DISTANCE) / (double)DECEL_SCALING_DISTANCE;
             if (abs(error) >= int(encoderScale) + 1) {
                 // Acceleration should not be zero for moveToPosition mode.
                 if (localAcceleration != 0) {
@@ -211,8 +214,8 @@ void ARDUINO_ISR_ATTR PWMStepper::update() {
                     double decelerationUpdates = (abs(currentFreq) / unitFrequencyChange);
                     double estimatedDecelerationTime = decelerationUpdates * (freqUpdateInterval * PWM_STEPPER_TIMER_DELAY / 1000000.0);
                     decelerationDistance = localAcceleration * pow(estimatedDecelerationTime, 2) / 2.0; // (currentFreq * currentFreq) / (2.0 * acceleration);
-                    if (abs(error) < decelerationDistance * 1.5 || abs(error) < 50) { // Add slight buffer to deceleration
-                        localTargetFreq = 400; // Decelerate below timer mode threshold for better low-speed control. We can also calculate a dynamic target frequency based on how close we are to the target position, but for simplicity we will just use a fixed low frequency here.
+                    if (abs(error) < decelerationDistance * 1.5 || abs(error) < MIN_DECEL_ERROR) {
+                        localTargetFreq = DECELERATION_FREQUENCY; // Decelerate below timer mode threshold for better low-speed control
                         //decelerating = true;
                         //currentFreq = localTargetFreq;
                     } else {
@@ -388,7 +391,7 @@ bool PWMStepper::isEnabled() const {
 
 bool PWMStepper::getDirection() const {
     int speed = currentFreq;
-    if (state == STEPPER_MOVE_TO_POSITION && abs(speed) < 400) {
+    if (state == STEPPER_MOVE_TO_POSITION && abs(speed) < DECELERATION_FREQUENCY) {
         // In moveToPosition mode at low speeds, determine direction based on target position vs current position rather than frequency, 
         // because it is safe to switch direction at low speeds and move towards the target position even if the frequency is not perfectly stable yet. 
         // This helps to ensure we are moving in the correct direction towards the target position, especially when we are starting from a stop (speed = 0) or when we are very

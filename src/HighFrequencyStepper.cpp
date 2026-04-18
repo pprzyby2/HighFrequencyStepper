@@ -78,17 +78,14 @@ bool HighFrequencyStepper::addStepper(uint8_t index, const StepperConfig& config
     // Note: pulseCounters[index] is always valid after new ESP32Encoder()
     // The check above for invalid attachMode already handles encoder creation failures
     configs[index].encoderToMicrostepRatio = float(config.stepsPerRev * config.microsteps) / float(config.encoderSettings.resolution * config.encoderSettings.attachMode);
-        attachInterrupt(digitalPinToInterrupt(config.encoderSettings.pinZ), []() {
-        // Handle Z pin interrupt (e.g., reset position)
-    }, RISING);
+    // TODO: Implement Z-pin index pulse handler for encoder calibration
+    // attachInterrupt(digitalPinToInterrupt(config.encoderSettings.pinZ), []() {
+    //     // Reset position to 0 when index pulse detected
+    // }, RISING);
 
     // Create PWMStepper instance
     pwmSteppers[index] = new PWMStepper(pulseCounters[index], configs[index].encoderToMicrostepRatio, config.stepPin, config.dirPin, config.enablePin, config.ledcChannel);
     pwmSteppers[index]->setStepperEnabledHigh(config.stepperEnabledHigh);
-    if (!pwmSteppers[index]) {
-        Serial.println("ERROR: Failed to create PWMStepper instance");
-        return false;
-    }
         
     // Configure UART port
     if (config.driverSettings.driverType == TMC2209_DRIVER) {

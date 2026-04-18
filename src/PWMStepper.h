@@ -60,7 +60,8 @@ private:
     float encoderScale = 1.0; // Scale factor for encoder counts to steps
     
     // Dual mode operation
-    static const double FREQUENCY_THRESHOLD; // 512 Hz threshold
+    static const double FREQUENCY_THRESHOLD; // 512 Hz - below this we use timer mode
+    static const double DECELERATION_FREQUENCY; // 400 Hz - target freq when decelerating
     
     // Timer mode variables
     volatile uint64_t lastSpeedChangeMicros;

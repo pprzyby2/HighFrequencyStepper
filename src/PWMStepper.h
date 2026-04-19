@@ -1,21 +1,43 @@
 #ifndef PWMSTEPPER_H
 #define PWMSTEPPER_H
 
+/**
+ * @file PWMStepper.h
+ * @brief Low-level stepper motor driver using ESP32 LEDC PWM and timer-based stepping.
+ * 
+ * This class provides precise step pulse generation for stepper motors using dual-mode
+ * operation: LEDC hardware PWM for high frequencies (>=512 Hz) and software timer-based
+ * stepping for low frequencies (<512 Hz). It includes position tracking via encoder
+ * feedback and acceleration/deceleration control.
+ * 
+ * @note This class uses an ISR-safe architecture where the update() function runs in
+ * an ISR context and sets flags, while processCommands() runs in a separate FreeRTOS
+ * task to handle LEDC configuration changes.
+ * 
+ * @author ESP32-STEPPER2 Project
+ */
+
 #include <Arduino.h>
 #include "ESP32Encoder.h"
 #include <vector>
 #include "driver/ledc.h"
 
+/**
+ * @brief Stepper motor operational states
+ */
 enum StepperState {
-    STEPPER_OFF = 0,
-    STEPPER_IDLE = 1,
-    STEPPER_MOVE_TO_POSITION = 2,
-    STEPPER_MOVE_WITH_FREQUENCY = 3
+    STEPPER_OFF = 0,              ///< Driver disabled, no movement
+    STEPPER_IDLE = 1,             ///< Driver enabled, not moving
+    STEPPER_MOVE_TO_POSITION = 2, ///< Moving to target position with acceleration
+    STEPPER_MOVE_WITH_FREQUENCY = 3 ///< Continuous movement at target frequency
 };
 
+/**
+ * @brief PWM generation mode
+ */
 enum StepperMode {
-    MODE_LEDC = 0,
-    MODE_TIMER = 1
+    MODE_LEDC = 0,  ///< Hardware LEDC PWM (for frequencies >= 512 Hz)
+    MODE_TIMER = 1  ///< Software timer-based stepping (for frequencies < 512 Hz)
 };
 
 class PWMStepper {
@@ -100,63 +122,203 @@ private:
 
     
 public:
-    // Constructor
+    /**
+     * @brief Construct a new PWMStepper object
+     * @param encoder Pointer to ESP32Encoder for position feedback
+     * @param encoderScale Ratio of encoder counts to microsteps
+     * @param stepPin GPIO pin for step pulses
+     * @param dirPin GPIO pin for direction control
+     * @param enablePin GPIO pin for driver enable
+     * @param ledcChannel LEDC channel (0-15), each stepper needs unique channel
+     * @note Maximum 4 steppers supported (limited by LEDC timers)
+     */
     PWMStepper(ESP32Encoder* encoder, float encoderScale, uint8_t stepPin, uint8_t dirPin, uint8_t enablePin, uint8_t ledcChannel = 0);
     
-    // Destructor for proper cleanup
+    /**
+     * @brief Destructor - stops PWM and releases resources
+     */
     ~PWMStepper();
     
-    // Initialize the stepper
+    /**
+     * @brief Initialize the stepper driver
+     * @note Must be called before any movement commands. Configures GPIO pins,
+     *       LEDC channel, and starts the command processing task.
+     */
     void begin();
     
     
-    // Enable/disable the stepper driver
+    /**
+     * @brief Enable the stepper driver (energize coils)
+     */
     void enable();
+    
+    /**
+     * @brief Disable the stepper driver (de-energize coils)
+     * @note Also stops any ongoing movement
+     */
     void disable();
     
-    // Start PWM at specified frequency (steps per second)
+    /**
+     * @brief Accelerate to target frequency with configured acceleration
+     * @param frequency Target frequency in Hz (steps per second), negative for reverse
+     * @note Non-blocking, motor accelerates gradually to target frequency
+     */
     void accelerateToFrequency(double frequency);
+    
+    /**
+     * @brief Start moving immediately at specified frequency (no acceleration)
+     * @param frequency Target frequency in Hz (steps per second), negative for reverse
+     * @note Immediate speed change, use accelerateToFrequency() for smooth transitions
+     */
     void moveAtFrequency(double frequency);
+    
+    /**
+     * @brief Move to absolute position with trapezoidal motion profile
+     * @param position Target position in microsteps
+     * @param frequency Maximum frequency in Hz for the move
+     * @note Uses acceleration/deceleration for smooth motion
+     */
     void moveToPosition(int64_t position, double frequency);
+    
+    /**
+     * @brief Check if currently executing a moveToPosition command
+     * @return true if moving to position, false otherwise
+     */
     bool isMovingToPosition() const;
     
-    // Stop PWM
+    /**
+     * @brief Stop PWM output immediately
+     * @note Sets frequency to 0 and returns to IDLE state
+     */
     void stopPWM();
     
-    // Set frequency while running
+    /**
+     * @brief Set target frequency (thread-safe)
+     * @param frequency Target frequency in Hz
+     */
     void setTargetFrequency(double frequency);
+    
+    /**
+     * @brief Set acceleration rate (thread-safe)
+     * @param accel Acceleration in steps/s²
+     */
     void setAcceleration(double accel);
+    
+    /**
+     * @brief Set target position (thread-safe)
+     * @param position Target position in microsteps
+     */
     void setTargetPosition(int64_t position);
+    
+    /**
+     * @brief Set encoder scale factor
+     * @param scale Ratio of encoder counts to microsteps
+     */
     void setEncoderScale(float scale) { encoderScale = scale; }
-    void setMaxFreq(int64_t maxFrequency) { maxFreq = maxFrequency; }   
+    
+    /**
+     * @brief Set maximum allowed frequency
+     * @param maxFrequency Maximum frequency in Hz
+     */
+    void setMaxFreq(int64_t maxFrequency) { maxFreq = maxFrequency; }
+    
+    /**
+     * @brief Configure enable pin polarity
+     * @param enabled true if enable pin is active HIGH, false for active LOW
+     */
     void setStepperEnabledHigh(bool enabled) { stepperEnabledHigh = enabled; }
+    
+    /**
+     * @brief Invert direction logic
+     * @param invert true to invert direction, false for normal
+     */
     void setInvertDirection(bool invert) { invertDirection = invert; }
     
-    // Get current status
+    /**
+     * @brief Check if stepper driver is enabled
+     * @return true if enabled, false otherwise
+     */
     bool isEnabled() const;
+    
+    /**
+     * @brief Get current movement direction
+     * @return true for forward, false for reverse
+     */
     bool getDirection() const;
+    
+    /**
+     * @brief Get current step frequency (thread-safe)
+     * @return Current frequency in Hz
+     */
     double getFrequency() const;
+    
+    /**
+     * @brief Get target position (thread-safe)
+     * @return Target position in microsteps
+     */
     int64_t getTargetPosition() const;
+    
+    /**
+     * @brief Check if motor is currently moving
+     * @return true if moving (to position or at frequency)
+     */
     bool isMoving() const { return state == STEPPER_MOVE_TO_POSITION || state == STEPPER_MOVE_WITH_FREQUENCY; }
+    
+    /**
+     * @brief Get current PWM generation mode
+     * @return MODE_LEDC or MODE_TIMER
+     */
     StepperMode getMode() const;
+    
+    /**
+     * @brief Get current position from encoder
+     * @return Current position in microsteps
+     */
     int64_t getPosition() const {
         return (int) encoder->getCount() * encoderScale;
     }
+    
+    /**
+     * @brief Print current status to Serial
+     */
     void printStatus() const;
     
-    // Utility functions
-    void update();          // Called from ISR - only sets flags, no LEDC calls
-    void processCommands(); // Called from main loop - processes pending LEDC commands
+    /**
+     * @brief ISR update function - called from timer ISR
+     * @note Only sets flags, does not call LEDC functions (ISR-safe)
+     * @warning Do not call from user code
+     */
+    void update();
+    
+    /**
+     * @brief Process pending LEDC commands
+     * @note Called automatically by FreeRTOS task, no need to call manually
+     */
+    void processCommands();
         
-    // Advanced functions
+    /**
+     * @brief Set LEDC resolution
+     * @param resolution Resolution in bits (1-16)
+     */
     void setLEDCResolution(uint8_t resolution);
+    
+    /**
+     * @brief Set LEDC channel
+     * @param channel Channel number (0-15)
+     */
     void setLEDCChannel(uint8_t channel);
     
-    // Get maximum LEDC frequency for current resolution
+    /**
+     * @brief Get maximum achievable LEDC frequency
+     * @return Maximum frequency in Hz for current resolution
+     */
     double getMaxLEDCFrequency() const;
 };
 
-// Global function to process pending LEDC commands - call from loop()
+/**
+ * @brief Process pending LEDC commands for all stepper instances
+ * @note Called automatically by internal FreeRTOS task. Not needed in user loop().
+ */
 extern void processAllStepperCommands();
 
 #endif // PWMSTEPPER_H

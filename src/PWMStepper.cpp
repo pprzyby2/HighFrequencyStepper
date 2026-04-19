@@ -15,8 +15,8 @@ const double PWMStepper::FREQUENCY_THRESHOLD = 1024.0;
 const double PWMStepper::DECELERATION_FREQUENCY = 1000.0; // Target freq when decelerating near position
 
 // Constants for position control
-static const int64_t DECEL_SCALING_DISTANCE = 800; // Distance (steps) over which acceleration scales
-static const int64_t MIN_DECEL_ERROR = 50; // Minimum error (steps) before starting deceleration
+static const float DECEL_SCALING_DISTANCE = 800.0f; // Distance (steps) over which acceleration scales
+static const float MIN_DECEL_ERROR = 50.0f; // Minimum error (steps) before starting deceleration
 
 const uint64_t PWM_STEPPER_TIMER_DELAY = 500; // 0.5ms
 esp_timer_handle_t pwm_stepper_timer = nullptr;
@@ -167,38 +167,41 @@ void PWMStepper::begin() {
     Serial.printf("PWM Stepper instances: %d\n", (int)pwmStepperInstances.size());
 }
 
+double ARDUINO_ISR_ATTR alignPositionToEncoder(double position, float encoderScale) {
+    double remainder = fmod(position, encoderScale);
+    if (remainder >= encoderScale / 2) {
+        return position + (encoderScale - remainder); // Round up
+    } else {
+        return position - remainder; // Round down
+    }
+}
+
 void ARDUINO_ISR_ATTR PWMStepper::update() {
     // Read 64-bit variables atomically at the start of ISR
     portENTER_CRITICAL_ISR(&mux);
-    int64_t localTargetPosition = targetPosition;
-    double localTargetFreq = targetFreq;
-    double localAcceleration = acceleration;
+    float localTargetPosition = (float) targetPosition;
+    float localTargetFreq = (float) targetFreq;
+    float localAcceleration = (float) acceleration;
     portEXIT_CRITICAL_ISR(&mux);
     
     float currentPosition = encoderScale * encoder->getCount();
     uint64_t currentTime = micros();
-    int64_t error = 0;
+    float error = 0;
     bool reachedTarget = false;
     bool direction = getDirection(); // true = forward, false = reverse
+
+    // If we are in moveToPosition mode, calculate error and check if we've reached the target. We use a counter to ensure we've been at the target for several consecutive updates 
+    // to avoid noise causing premature stopping.
     if (state == STEPPER_MOVE_TO_POSITION) {
-        double localTargetPositionAligned = fmod(localTargetPosition, encoderScale); // Ensure target position is aligned to encoder increments
-        if (localTargetPositionAligned >= encoderScale / 2) {
-            localTargetPosition += encoderScale + localTargetPositionAligned; // Round up to nearest encoder increment
-        } else {
-            localTargetPosition -= localTargetPositionAligned; // Round down to nearest encoder increment
-        }
+        localTargetPosition = alignPositionToEncoder(localTargetPosition, encoderScale); // Ensure target position is aligned to encoder increments
         error = localTargetPosition - currentPosition;
         if (abs(error) < encoderScale / 2.0) {
             reachedTargetCounter++;
         } else {
             reachedTargetCounter = 0;
         }
-        reachedTarget = reachedTargetCounter > 100; // Consider reached if we've been within half an encoder increment for 10 consecutive updates
+        reachedTarget = reachedTargetCounter > 5; // Consider reached if we've been within half an encoder increment for 5 consecutive updates
     }
-
-    // Update position history for frequency estimation
-    positionHistory[updateNumber % MAX_POSITION_HISTORY] = currentPosition;
-    updateTimes[updateNumber % MAX_POSITION_HISTORY] = currentTime;
 
     // Update direction based on current frequency and target position. 
     setDirectionPin(direction); // Ensure direction is correct based on target frequency
@@ -211,14 +214,25 @@ void ARDUINO_ISR_ATTR PWMStepper::update() {
         uint64_t microsSinceLastSpeedChange = currentTime - lastSpeedChangeMicros;
         double expectedMicrostepPeriod = 1000000.0 / abs(currentFreq * 2); // Period in microseconds for a full step (times 2 because we toggle 0-1 and 1-0 for each step)
         uint64_t expectedNumberOfSteps = (uint64_t) (double(microsSinceLastSpeedChange) / expectedMicrostepPeriod);
-        if (expectedNumberOfSteps > stepsSinceLastSpeedChange && !reachedTarget && error != 0) {
+        if (expectedNumberOfSteps > stepsSinceLastSpeedChange && !reachedTarget) {
             int stepPinState = digitalRead(stepPin); // Read current state
             pinMode(stepPin, OUTPUT);
             digitalWrite(stepPin, !stepPinState); // Start new period with toggled state   
             stepsSinceLastSpeedChange++;     
         }
     }
-    // If timer mode is not active, we rely on LEDC to generate the step pulses, so we only need to monitor position and handle acceleration/deceleration logic for moveToPosition mode.
+
+    // Calculate empirical frequency from encoder counts. We use the position history to calculate how many steps have been taken over a certain time period, 
+    // which gives us an estimate of the actual frequency. This can help us detect stalls or missed steps.
+    // Update position history for frequency estimation
+    positionHistory[updateNumber % MAX_POSITION_HISTORY] = currentPosition;
+    updateTimes[updateNumber % MAX_POSITION_HISTORY] = currentTime;    
+    if (updateNumber < MAX_POSITION_HISTORY) {
+        encoderFrequency = (currentPosition - positionHistory[0]) * 1000000.0 / (currentTime - updateTimes[0]);
+    } else {
+        encoderFrequency = (currentPosition - positionHistory[updateNumber % MAX_POSITION_HISTORY]) * 1000000.0 / (currentTime - updateTimes[updateNumber % MAX_POSITION_HISTORY]);
+    }
+
 
     // Periodically update the encoder frequency in order to accelerate/decelerate based on actual movement. 
     // This can help compensate for missed steps or stalls, especially at low speeds. We only update the frequency every N updates to avoid excessive calculations and noise in the frequency estimation.
@@ -227,18 +241,6 @@ void ARDUINO_ISR_ATTR PWMStepper::update() {
     // Only update frequency every freqUpdateInterval updates to reduce noise and computational load
     if (updateNumber % freqUpdateInterval != 0) {
         return;
-    }
-    // if (updateNumber % 5000 == 0) {
-    //     Serial.printf("Current Position: %.2f, Target Position: %d, Current Freq: %.2f, Target Freq: %.2f, Encoder Freq: %.2f, state: %s\n", 
-    //         currentPosition, targetPosition, currentFreq, targetFreq, encoderFrequency, getStateName(state).c_str());
-    // }
-
-    // Calculate empirical frequency from encoder counts. We use the position history to calculate how many steps have been taken over a certain time period, 
-    // which gives us an estimate of the actual frequency. This can help us detect stalls or missed steps.
-    if (updateNumber < MAX_POSITION_HISTORY) {
-        encoderFrequency = (currentPosition - positionHistory[0]) * 1000000.0 / (currentTime - updateTimes[0]);
-    } else {
-        encoderFrequency = (currentPosition - positionHistory[updateNumber % MAX_POSITION_HISTORY]) * 1000000.0 / (currentTime - updateTimes[updateNumber % MAX_POSITION_HISTORY]);
     }
 
     // acceleration is in steps/s^2. We need to convert it to frequency change per update interval. 

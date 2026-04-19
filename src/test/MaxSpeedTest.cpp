@@ -137,5 +137,7 @@ void optimizeForMaxSpeed(HighFrequencyStepper& controller, uint8_t index) {
             controller.getMicrostepsPerRevolution(index) > 0 ? (float)(60.0 * maxValidSpeed) / controller.getMicrostepsPerRevolution(index) : 0.0);
         delay(500);
     }
-    Serial.printf("Optimal RMS for Stepper %d: %d achieving max speed of %d Hz\n", index, bestRMS, globalMaxSpeed);    
+    Serial.printf("Optimal RMS for Stepper %d: %d achieving max speed of %d Hz\n", index, bestRMS, globalMaxSpeed);
+    
+    cleanupAfterTest(controller);
 }

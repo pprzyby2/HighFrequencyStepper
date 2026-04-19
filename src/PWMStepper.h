@@ -74,6 +74,7 @@ private:
     volatile int64_t targetPosition;
     volatile int updateNumber = 0;
     volatile double decelerationDistance = 0;
+    volatile int reachedTargetCounter = 0; // Counts how many consecutive updates we've been at the target (for stability)
     static const size_t MAX_POSITION_HISTORY = 100; // Max history size
     std::vector<int64_t> positionHistory; // For tracking position over time
     std::vector<uint64_t> updateTimes; // Timestamps of updates

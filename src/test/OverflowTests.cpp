@@ -60,4 +60,6 @@ void testCounterOverflow(HighFrequencyStepper& controller) {
     for (uint8_t i = 0; i < controller.getStepperCount(); i++) {
         testCounterOverflow(controller, i);
     }
+    
+    cleanupAfterTest(controller);
 }

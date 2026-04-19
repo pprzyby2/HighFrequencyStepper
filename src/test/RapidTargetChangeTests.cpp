@@ -157,6 +157,7 @@ void testRapidTargetChanges(HighFrequencyStepper& stepper) {
         delay(500);
     }
     
+    cleanupAfterTest(stepper);
     Serial.println("\n=== Rapid Target Change Test Complete ===\n");
 }
 
@@ -228,6 +229,7 @@ void testRapidOscillation(HighFrequencyStepper& stepper) {
         delay(500);
     }
     
+    cleanupAfterTest(stepper);
     Serial.println("\n=== Rapid Oscillation Test Complete ===\n");
 }
 
@@ -312,6 +314,7 @@ void testChasingTarget(HighFrequencyStepper& stepper) {
         delay(500);
     }
     
+    cleanupAfterTest(stepper);
     Serial.println("\n=== Chasing Target Test Complete ===\n");
 }
 
@@ -404,4 +407,6 @@ void testLongRun(HighFrequencyStepper& stepper) {
                      "Target: " + String(0) + ", Actual: " + String(finalPos) + ", Error: " + String(error), accuracy);
 
     }
+    
+    cleanupAfterTest(stepper);
 }

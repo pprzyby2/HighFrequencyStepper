@@ -69,6 +69,8 @@ void testHighSpeedAcceleration(HighFrequencyStepper& controller) {
     for (uint8_t i = 0; i < controller.getStepperCount(); i++) {
         testHighSpeedAcceleration(controller, i);
     }
+    
+    cleanupAfterTest(controller);
 }
 
 void testLowSpeedPrecision(HighFrequencyStepper& controller, uint8_t index) {
@@ -138,6 +140,8 @@ void testLowSpeedPrecision(HighFrequencyStepper& controller) {
     for (uint8_t i = 0; i < controller.getStepperCount(); i++) {
         testLowSpeedPrecision(controller, i);
     }
+    
+    cleanupAfterTest(controller);
 }
 
 void demonstrateSpeedMeasurement(HighFrequencyStepper& controller, uint8_t index) {
@@ -179,6 +183,8 @@ void demonstrateSpeedMeasurement(HighFrequencyStepper& controller) {
     for (uint8_t i = 0; i < controller.getStepperCount(); i++) {
         demonstrateSpeedMeasurement(controller, i);
     }
+    
+    cleanupAfterTest(controller);
 }
 
 /**
@@ -331,4 +337,6 @@ void testMultiMotorIndependentSpeeds(HighFrequencyStepper& controller) {
     
     addTestResult("System", "Multi-Motor Independent Speeds Overall", overallPassed,
                   String(passedCount) + "/" + String(stepperCount) + " motors passed, ratios " + (ratiosCorrect ? "OK" : "FAIL"));
+    
+    cleanupAfterTest(controller);
 }

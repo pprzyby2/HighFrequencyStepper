@@ -74,5 +74,7 @@ void testAnglePrecision(HighFrequencyStepper& stepper) {
                     "Expected: " + String(720.0) + ", Got: " + String(finalPos), accuracy);
 
         delay(1000);
-    }    
+    }
+    
+    cleanupAfterTest(stepper);
 }

@@ -75,4 +75,6 @@ void testDirectionChanges(HighFrequencyStepper& stepper, int index) {
     
     Serial.print("Final position after direction test: "); 
     Serial.println(stepper.getPosition(index));
+    
+    cleanupAfterTest(stepper);
 }

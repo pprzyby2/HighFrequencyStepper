@@ -26,4 +26,11 @@ void printTestSummary();
 void clearTestResults();
 void printSystemStatus(HighFrequencyStepper& stepper);
 
+/**
+ * @brief Cleanup after test - decelerates motors to zero and disables them
+ * @param stepper Reference to the stepper controller
+ * @note Should be called at the end of every test function
+ */
+void cleanupAfterTest(HighFrequencyStepper& stepper);
+
 #endif // TESTUTILS_H

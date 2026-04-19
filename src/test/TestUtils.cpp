@@ -84,3 +84,23 @@ void printSystemStatus(HighFrequencyStepper& stepper) {
     }
     Serial.println("=====================\n");
 }
+
+void cleanupAfterTest(HighFrequencyStepper& stepper) {
+    Serial.println("\n--- Cleaning up after test ---");
+    
+    // First, decelerate all motors to zero
+    for (uint8_t i = 0; i < stepper.getStepperCount(); i++) {
+        if (stepper.isMoving(i)) {
+            stepper.accelerateToFrequency(i, 0, true);  // Decelerate to zero with wait
+        }
+    }
+    
+    // Stop all motors (immediate)
+    stepper.stopAll();
+    delay(100);  // Brief pause to ensure stop commands are processed
+    
+    // Disable all steppers
+    stepper.disableAll();
+    
+    Serial.println("All motors stopped and disabled.\n");
+}

@@ -58,6 +58,8 @@ void demonstratePositionTracking(HighFrequencyStepper& controller) {
         Serial.printf("\n--- Demonstration for Stepper %d ---\n", i);
         demonstratePositionTracking(controller, i);
     }
+    
+    cleanupAfterTest(controller);
 }
 
 void demonstrateClosedLoopControl(HighFrequencyStepper& controller, uint8_t index) {
@@ -130,6 +132,8 @@ void demonstrateClosedLoopControl(HighFrequencyStepper& controller) {
         Serial.printf("\n--- Closed Loop Demo for Stepper %d ---\n", i);
         demonstrateClosedLoopControl(controller, i);
     }
+    
+    cleanupAfterTest(controller);
 }
 
 void testAsyncMovement(HighFrequencyStepper& stepper) {
@@ -187,4 +191,6 @@ void testAsyncMovement(HighFrequencyStepper& stepper) {
         Serial.printf("Final position of Stepper %d: %d\n", i, stepper.getPosition(i));
         addTestResult(stepper.getName(i), "Asynchronous Movement Demo", true, "Completed successfully");
     }
+    
+    cleanupAfterTest(stepper);
 }

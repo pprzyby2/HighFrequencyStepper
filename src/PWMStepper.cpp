@@ -181,8 +181,19 @@ void ARDUINO_ISR_ATTR PWMStepper::update() {
     bool reachedTarget = false;
     bool direction = getDirection(); // true = forward, false = reverse
     if (state == STEPPER_MOVE_TO_POSITION) {
+        double localTargetPositionAligned = fmod(localTargetPosition, encoderScale); // Ensure target position is aligned to encoder increments
+        if (localTargetPositionAligned >= encoderScale / 2) {
+            localTargetPosition += encoderScale + localTargetPositionAligned; // Round up to nearest encoder increment
+        } else {
+            localTargetPosition -= localTargetPositionAligned; // Round down to nearest encoder increment
+        }
         error = localTargetPosition - currentPosition;
-        reachedTarget = abs(error) < int(encoderScale); // Consider reached if within 1 step (scaled by encoder)
+        if (abs(error) < encoderScale / 2.0) {
+            reachedTargetCounter++;
+        } else {
+            reachedTargetCounter = 0;
+        }
+        reachedTarget = reachedTargetCounter > 100; // Consider reached if we've been within half an encoder increment for 10 consecutive updates
     }
 
     // Update position history for frequency estimation
@@ -200,7 +211,7 @@ void ARDUINO_ISR_ATTR PWMStepper::update() {
         uint64_t microsSinceLastSpeedChange = currentTime - lastSpeedChangeMicros;
         double expectedMicrostepPeriod = 1000000.0 / abs(currentFreq * 2); // Period in microseconds for a full step (times 2 because we toggle 0-1 and 1-0 for each step)
         uint64_t expectedNumberOfSteps = (uint64_t) (double(microsSinceLastSpeedChange) / expectedMicrostepPeriod);
-        if (expectedNumberOfSteps > stepsSinceLastSpeedChange && !reachedTarget) {
+        if (expectedNumberOfSteps > stepsSinceLastSpeedChange && !reachedTarget && error != 0) {
             int stepPinState = digitalRead(stepPin); // Read current state
             pinMode(stepPin, OUTPUT);
             digitalWrite(stepPin, !stepPinState); // Start new period with toggled state   

@@ -11,8 +11,8 @@
 
 
 // Define frequency threshold (512 Hz) - below this we use timer mode for better low-speed control
-const double PWMStepper::FREQUENCY_THRESHOLD = 512.0;
-const double PWMStepper::DECELERATION_FREQUENCY = 400.0; // Target freq when decelerating near position
+const double PWMStepper::FREQUENCY_THRESHOLD = 1024.0;
+const double PWMStepper::DECELERATION_FREQUENCY = 1000.0; // Target freq when decelerating near position
 
 // Constants for position control
 static const int64_t DECEL_SCALING_DISTANCE = 800; // Distance (steps) over which acceleration scales
@@ -177,10 +177,20 @@ void ARDUINO_ISR_ATTR PWMStepper::update() {
     
     float currentPosition = encoderScale * encoder->getCount();
     uint64_t currentTime = micros();
+    int64_t error = 0;
+    bool reachedTarget = false;
+    bool direction = getDirection(); // true = forward, false = reverse
+    if (state == STEPPER_MOVE_TO_POSITION) {
+        error = localTargetPosition - currentPosition;
+        reachedTarget = abs(error) < int(encoderScale); // Consider reached if within 1 step (scaled by encoder)
+    }
 
     // Update position history for frequency estimation
     positionHistory[updateNumber % MAX_POSITION_HISTORY] = currentPosition;
     updateTimes[updateNumber % MAX_POSITION_HISTORY] = currentTime;
+
+    // Update direction based on current frequency and target position. 
+    setDirectionPin(direction); // Ensure direction is correct based on target frequency
 
     // Handle timer mode stepping if state is active and frequency is above threshold
     // Timer mode is triggered when frequency is below 500 Hz for better low-speed peformance.
@@ -190,7 +200,7 @@ void ARDUINO_ISR_ATTR PWMStepper::update() {
         uint64_t microsSinceLastSpeedChange = currentTime - lastSpeedChangeMicros;
         double expectedMicrostepPeriod = 1000000.0 / abs(currentFreq * 2); // Period in microseconds for a full step (times 2 because we toggle 0-1 and 1-0 for each step)
         uint64_t expectedNumberOfSteps = (uint64_t) (double(microsSinceLastSpeedChange) / expectedMicrostepPeriod);
-        if (expectedNumberOfSteps > stepsSinceLastSpeedChange) {
+        if (expectedNumberOfSteps > stepsSinceLastSpeedChange && !reachedTarget) {
             int stepPinState = digitalRead(stepPin); // Read current state
             pinMode(stepPin, OUTPUT);
             digitalWrite(stepPin, !stepPinState); // Start new period with toggled state   
@@ -198,9 +208,6 @@ void ARDUINO_ISR_ATTR PWMStepper::update() {
         }
     }
     // If timer mode is not active, we rely on LEDC to generate the step pulses, so we only need to monitor position and handle acceleration/deceleration logic for moveToPosition mode.
-
-    // Update direction based on current frequency and target position. 
-    setDirectionPin(getDirection()); // Ensure direction is correct based on target frequency
 
     // Periodically update the encoder frequency in order to accelerate/decelerate based on actual movement. 
     // This can help compensate for missed steps or stalls, especially at low speeds. We only update the frequency every N updates to avoid excessive calculations and noise in the frequency estimation.
@@ -228,17 +235,14 @@ void ARDUINO_ISR_ATTR PWMStepper::update() {
     // We can simplify this by using the fact that frequency is proportional to speed, so we can just use acceleration * (update interval in seconds) as the frequency change per update interval.
     double unitFrequencyChange = localAcceleration * (freqUpdateInterval * PWM_STEPPER_TIMER_DELAY / 1000000.0);
     
-    // Error is used in MoveToPosition mode to determine how close we are to the target position and adjust acceleration accordingly. Declaring it here so switch cases can use it if needed.
-    int64_t error;
     switch (state) {
         case STEPPER_OFF:
             return;
         case STEPPER_IDLE:
             return; // Do nothing if not running
         case STEPPER_MOVE_TO_POSITION:
-            error = localTargetPosition - currentPosition;
             unitFrequencyChange = unitFrequencyChange * min(abs(error), DECEL_SCALING_DISTANCE) / (double)DECEL_SCALING_DISTANCE;
-            if (abs(error) >= int(encoderScale) + 1) {
+            if (!reachedTarget) {
                 // Acceleration should not be zero for moveToPosition mode.
                 if (localAcceleration != 0) {
                     // Calculate how many updates it would take to decelerate from current frequency to 0 at the given acceleration. 
@@ -250,12 +254,10 @@ void ARDUINO_ISR_ATTR PWMStepper::update() {
                     decelerationDistance = localAcceleration * pow(estimatedDecelerationTime, 2) / 2.0; // (currentFreq * currentFreq) / (2.0 * acceleration);
                     if (abs(error) < decelerationDistance * 1.5 || abs(error) < MIN_DECEL_ERROR) {
                         localTargetFreq = DECELERATION_FREQUENCY; // Decelerate below timer mode threshold for better low-speed control
-                        //decelerating = true;
-                        //currentFreq = localTargetFreq;
                     } else {
                         localTargetFreq = maxFreq; // Accelerate
                     }
-                    localTargetFreq = abs(localTargetFreq) * (error > 0 ? 1 : -1); // Determine target direction based on error
+                    localTargetFreq = abs(localTargetFreq) * (error > 0 ? 1 : -1); // Ensure target frequency has correct sign based on error direction
                     double newFreq = currentFreq;
                 
                     if (newFreq < localTargetFreq) {

@@ -146,16 +146,19 @@ void PWMStepper::begin() {
     digitalWrite(dirPin, HIGH);
     disable();
     
-    // Setup LEDC channel
+    // Initialize vectors BEFORE adding to instances (ISR safety)
+    positionHistory.resize(MAX_POSITION_HISTORY, encoder->getCount());
+    updateTimes.resize(MAX_POSITION_HISTORY, micros());
+    
+    // Setup LEDC channel with a safe initial frequency
+    ledcFrequency = 1000; // Safe default frequency
     ledcSetup(ledcChannel, ledcFrequency, 1);
     ledcAttachPin(stepPin, ledcChannel);
     stopLEDCMode();
 
+    // Add to instances list AFTER all initialization is complete
     pwmStepperInstances.push_back(this);
     initStepperTimers();
-
-    positionHistory.resize(MAX_POSITION_HISTORY, encoder->getCount());
-    updateTimes.resize(MAX_POSITION_HISTORY, micros());
     state = STEPPER_IDLE;
 
     Serial.println("PWMStepper initialized successfully!");

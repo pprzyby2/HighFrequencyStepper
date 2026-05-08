@@ -184,7 +184,7 @@ double ARDUINO_ISR_ATTR PWMStepper::calculateExpectedNumberOfSteps(uint64_t curr
     uint64_t microsSinceLastSpeedChange = currentTime - lastSpeedChangeMicros;
     double expectedMicrostepPeriod = 1000000.0 / abs(currentFreq * 2); // Period in microseconds for a full step (times 2 because we toggle 0-1 and 1-0 for each step)
     double expectedNumberOfSteps = double(microsSinceLastSpeedChange) / expectedMicrostepPeriod;   
-    return expectedNumberOfSteps + expectedStepsOffset; // Add offset to account for any discrepancies in timing or missed steps
+    return expectedNumberOfSteps;
 }
 
 void ARDUINO_ISR_ATTR PWMStepper::update() {
@@ -223,6 +223,7 @@ void ARDUINO_ISR_ATTR PWMStepper::update() {
     if (mode == MODE_TIMER && state != STEPPER_IDLE && state != STEPPER_OFF && currentFreq != 0) {
         // Calculate how many steps we should have taken since the last speed change based on the current frequency
         double expectedNumberOfSteps = calculateExpectedNumberOfSteps(currentTime);
+        expectedNumberOfSteps += expectedStepsOffset; // Adjust expected steps by the offset to account for any discrepancy in actual steps taken
         if (expectedNumberOfSteps > stepsSinceLastSpeedChange && !reachedTarget) {
             int stepPinState = digitalRead(stepPin); // Read current state
             pinMode(stepPin, OUTPUT);

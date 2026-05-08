@@ -89,6 +89,7 @@ private:
     // Timer mode variables
     volatile uint64_t lastSpeedChangeMicros;
     volatile uint32_t stepsSinceLastSpeedChange;
+    volatile float expectedStepsOffset;
     
     // Deferred command flags for ISR-safe operation
     // ISR sets these flags, main loop processes them via processCommands()
@@ -120,7 +121,14 @@ private:
             default: return String("UNKNOWN");
         }
     }
-
+    /**
+     * @brief Calculate expected number of steps based on current time, last speed change, and current frequency
+     * @param currentTime Current time in microseconds
+     * @param lastSpeedChangeMicros Time of last speed change in microseconds
+     * @param currentFreq Current frequency in Hz
+     * @return Expected number of steps
+     */
+    double calculateExpectedNumberOfSteps(uint64_t currentTime);
     
 public:
     /**
@@ -283,7 +291,7 @@ public:
      * @brief Print current status to Serial
      */
     void printStatus() const;
-    
+
     /**
      * @brief ISR update function - called from timer ISR
      * @note Only sets flags, does not call LEDC functions (ISR-safe)

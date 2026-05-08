@@ -159,6 +159,7 @@ void PWMStepper::begin() {
     // Add to instances list AFTER all initialization is complete
     pwmStepperInstances.push_back(this);
     initStepperTimers();
+    expectedStepsOffset = 0; // Initialize expected steps offset
     state = STEPPER_IDLE;
 
     Serial.println("PWMStepper initialized successfully!");
@@ -177,6 +178,13 @@ double ARDUINO_ISR_ATTR alignPositionToEncoder(double position, float encoderSca
     } else {
         return position - remainder; // Round down
     }
+}
+
+double ARDUINO_ISR_ATTR PWMStepper::calculateExpectedNumberOfSteps(uint64_t currentTime) {
+    uint64_t microsSinceLastSpeedChange = currentTime - lastSpeedChangeMicros;
+    double expectedMicrostepPeriod = 1000000.0 / abs(currentFreq * 2); // Period in microseconds for a full step (times 2 because we toggle 0-1 and 1-0 for each step)
+    double expectedNumberOfSteps = double(microsSinceLastSpeedChange) / expectedMicrostepPeriod;   
+    return expectedNumberOfSteps + expectedStepsOffset; // Add offset to account for any discrepancies in timing or missed steps
 }
 
 void ARDUINO_ISR_ATTR PWMStepper::update() {
@@ -214,9 +222,7 @@ void ARDUINO_ISR_ATTR PWMStepper::update() {
     // In timer mode, we manually toggle the step pin at the correct intervals based on the current frequency.
     if (mode == MODE_TIMER && state != STEPPER_IDLE && state != STEPPER_OFF && currentFreq != 0) {
         // Calculate how many steps we should have taken since the last speed change based on the current frequency
-        uint64_t microsSinceLastSpeedChange = currentTime - lastSpeedChangeMicros;
-        double expectedMicrostepPeriod = 1000000.0 / abs(currentFreq * 2); // Period in microseconds for a full step (times 2 because we toggle 0-1 and 1-0 for each step)
-        uint64_t expectedNumberOfSteps = (uint64_t) (double(microsSinceLastSpeedChange) / expectedMicrostepPeriod);
+        double expectedNumberOfSteps = calculateExpectedNumberOfSteps(currentTime);
         if (expectedNumberOfSteps > stepsSinceLastSpeedChange && !reachedTarget) {
             int stepPinState = digitalRead(stepPin); // Read current state
             pinMode(stepPin, OUTPUT);
@@ -659,12 +665,14 @@ void PWMStepper::startTimerMode(double frequency) {
 }
 
 void PWMStepper::stopTimerMode() {
+    expectedStepsOffset = 0; // Reset expected steps offset when stopping timer mode
     digitalWrite(stepPin, LOW); // Ensure pin is LOW
 }
 
 void PWMStepper::onSpeedChange(double newSpeed) {
     if (newSpeed != currentFreq) {
         lastSpeedChangeMicros = micros();
+        expectedStepsOffset = calculateExpectedNumberOfSteps(lastSpeedChangeMicros) - stepsSinceLastSpeedChange; // Adjust offset to account for any discrepancy in expected vs actual steps taken since last speed change
         stepsSinceLastSpeedChange = 0;
     }
     currentFreq = newSpeed;

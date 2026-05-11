@@ -449,6 +449,11 @@ bool HighFrequencyStepper::moveToAngleRelative(uint8_t index, double angleDegree
     return moveRelative(index, steps, frequency, blocking);
 }
 
+bool HighFrequencyStepper::isMovingToPosition(uint8_t index) const {
+    if (!validateStepperIndex(index)) return false;
+    return pwmSteppers[index]->isMovingToPosition();
+}
+
 
 bool HighFrequencyStepper::accelerateToFrequency(uint8_t index, double frequency, bool waitForCompletion) { 
     if (!validateStepperIndex(index)) return false;

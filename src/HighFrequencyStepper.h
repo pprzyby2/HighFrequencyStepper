@@ -358,7 +358,7 @@ public:
      * @return true if command accepted
      */
     bool moveToPosition(uint8_t index, int32_t position, double frequency = 0, bool blocking = true);
-    
+
     /**
      * @brief Move relative to current position
      * @param index Stepper index
@@ -388,6 +388,13 @@ public:
      * @return true if command accepted
      */
     bool moveToAngleRelative(uint8_t index, double angleDegrees, double frequency = 0, bool blocking = true);
+
+    /**
+     * @brief Check if stepper is currently moving to a target position
+     * @param index Stepper index
+     * @return true if moving to target position
+     */
+    bool isMovingToPosition(uint8_t index) const;
 
     // ==================== Velocity-Based Movement ====================
     

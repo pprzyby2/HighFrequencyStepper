@@ -71,12 +71,12 @@ private:
     volatile double acceleration;
     volatile double maxFreq;
     volatile double targetFreq;
-    volatile int64_t targetPosition;
+    volatile double targetPosition;
     volatile int updateNumber = 0;
     volatile double decelerationDistance = 0;
     volatile int reachedTargetCounter = 0; // Counts how many consecutive updates we've been at the target (for stability)
     static const size_t MAX_POSITION_HISTORY = 100; // Max history size
-    std::vector<int64_t> positionHistory; // For tracking position over time
+    std::vector<double> positionHistory; // For tracking position over time
     std::vector<uint64_t> updateTimes; // Timestamps of updates
 
     ESP32Encoder* encoder;
@@ -89,7 +89,8 @@ private:
     // Timer mode variables
     volatile uint64_t lastSpeedChangeMicros;
     volatile uint32_t stepsSinceLastSpeedChange;
-    volatile float expectedStepsOffset;
+    volatile double possitionAtLastSpeedChange;
+    volatile double expectedStepsOffset;
     
     // Deferred command flags for ISR-safe operation
     // ISR sets these flags, main loop processes them via processCommands()
@@ -129,6 +130,13 @@ private:
      * @return Expected number of steps
      */
     double calculateExpectedNumberOfSteps(uint64_t currentTime);
+
+    /**
+     * @brief Calculate expected position based on current time, last speed change, current frequency, and encoder feedback
+     * @param currentTime Current time in microseconds
+     * @return Expected position in microsteps
+     */
+    double calculateExpectedPosition(uint64_t currentTime);
     
 public:
     /**
@@ -265,7 +273,7 @@ public:
      * @brief Get target position (thread-safe)
      * @return Target position in microsteps
      */
-    int64_t getTargetPosition() const;
+    double getTargetPosition() const;
     
     /**
      * @brief Check if motor is currently moving
@@ -283,8 +291,8 @@ public:
      * @brief Get current position from encoder
      * @return Current position in microsteps
      */
-    int64_t getPosition() const {
-        return (int) encoder->getCount() * encoderScale;
+    double ARDUINO_ISR_ATTR getPosition() const {
+        return (double) encoder->getCount() * encoderScale;
     }
     
     /**

@@ -94,8 +94,8 @@ void testLowSpeedPrecision(HighFrequencyStepper& controller, uint8_t index) {
         int testTime = testTimes[i];
         Serial.printf("Testing low speed: %.1f Hz for %d seconds\n", freq, testTime);
         
-        //controller.moveAtFrequency(index, freqHz, dir);
-        controller.accelerateToFrequency(index, freq * (dir ? 1 : -1), true);
+        controller.moveAtFrequency(index, freq * (dir ? 1 : -1));
+        //controller.accelerateToFrequency(index, freq * (dir ? 1 : -1), true);
         delay(5000); // Allow time to stabilize encoder reading
         uint32_t startTime = millis();
         int32_t startPos = controller.getPosition(index);

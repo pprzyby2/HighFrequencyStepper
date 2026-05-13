@@ -8,14 +8,14 @@
 #include <vector>
 #include <algorithm>
 
-
+const bool TRACKING_BY_ENCODER = true; // Set to true to use encoder feedback for tracking, false to rely solely on timing
 
 // Define frequency threshold (512 Hz) - below this we use timer mode for better low-speed control
 const double PWMStepper::FREQUENCY_THRESHOLD = 1024.0;
 const double PWMStepper::DECELERATION_FREQUENCY = 1000.0; // Target freq when decelerating near position
 
 // Constants for position control
-static const float DECEL_SCALING_DISTANCE = 800.0f; // Distance (steps) over which acceleration scales
+static const double DECEL_SCALING_DISTANCE = 800.0f; // Distance (steps) over which acceleration scales
 static const float MIN_DECEL_ERROR = 50.0f; // Minimum error (steps) before starting deceleration
 
 const uint64_t PWM_STEPPER_TIMER_DELAY = 500; // 0.5ms
@@ -148,7 +148,7 @@ void PWMStepper::begin() {
     
     // Initialize vectors BEFORE adding to instances (ISR safety)
     positionHistory.resize(MAX_POSITION_HISTORY, encoder->getCount());
-    updateTimes.resize(MAX_POSITION_HISTORY, micros());
+    updateTimes.resize(MAX_POSITION_HISTORY, esp_timer_get_time());
     
     // Setup LEDC channel with a safe initial frequency
     ledcFrequency = 1000; // Safe default frequency
@@ -187,17 +187,22 @@ double ARDUINO_ISR_ATTR PWMStepper::calculateExpectedNumberOfSteps(uint64_t curr
     return expectedNumberOfSteps;
 }
 
+double ARDUINO_ISR_ATTR PWMStepper::calculateExpectedPosition(uint64_t currentTime) {
+    double expectedSteps = calculateExpectedNumberOfSteps(currentTime);
+    return possitionAtLastSpeedChange + ((expectedSteps + expectedStepsOffset) * (getDirection() ? 0.5 : -0.5)); // Add expected steps to position at last speed change, accounting for direction
+}
+
 void ARDUINO_ISR_ATTR PWMStepper::update() {
     // Read 64-bit variables atomically at the start of ISR
     portENTER_CRITICAL_ISR(&mux);
-    float localTargetPosition = (float) targetPosition;
-    float localTargetFreq = (float) targetFreq;
-    float localAcceleration = (float) acceleration;
+    double localTargetPosition = (double) targetPosition;
+    double localTargetFreq = (double) targetFreq;
+    double localAcceleration = (double) acceleration;
     portEXIT_CRITICAL_ISR(&mux);
     
-    float currentPosition = encoderScale * encoder->getCount();
-    uint64_t currentTime = micros();
-    float error = 0;
+    double currentPosition = (double) getPosition();
+    uint64_t currentTime = esp_timer_get_time();
+    double error = 0;
     bool reachedTarget = false;
     bool direction = getDirection(); // true = forward, false = reverse
 
@@ -221,15 +226,27 @@ void ARDUINO_ISR_ATTR PWMStepper::update() {
     // Timer mode is triggered when frequency is below 500 Hz for better low-speed peformance.
     // In timer mode, we manually toggle the step pin at the correct intervals based on the current frequency.
     if (mode == MODE_TIMER && state != STEPPER_IDLE && state != STEPPER_OFF && currentFreq != 0) {
-        // Calculate how many steps we should have taken since the last speed change based on the current frequency
-        double expectedNumberOfSteps = calculateExpectedNumberOfSteps(currentTime);
-        expectedNumberOfSteps += expectedStepsOffset; // Adjust expected steps by the offset to account for any discrepancy in actual steps taken
-        if (expectedNumberOfSteps > stepsSinceLastSpeedChange && !reachedTarget) {
-            int stepPinState = digitalRead(stepPin); // Read current state
-            pinMode(stepPin, OUTPUT);
-            digitalWrite(stepPin, !stepPinState); // Start new period with toggled state   
-            stepsSinceLastSpeedChange++;     
-        }
+        if (TRACKING_BY_ENCODER) {
+            // In tracking by encoder mode, we calculate the expected position based on the current frequency and time since last speed change, and compare it to the actual position from the encoder. 
+            // If we are behind where we expect to be, we can toggle the step pin to catch up. This allows us to compensate for missed steps or stalls, especially at low speeds.
+            double expectedPosition = calculateExpectedPosition(currentTime);
+            if ((direction && currentPosition < expectedPosition) || (!direction && currentPosition > expectedPosition)) {
+                int stepPinState = digitalRead(stepPin); // Read current state
+                pinMode(stepPin, OUTPUT);
+                digitalWrite(stepPin, !stepPinState); // Start new period with toggled state   
+                stepsSinceLastSpeedChange++;     
+            }
+        } else {
+            // Calculate how many steps we should have taken since the last speed change based on the current frequency
+            double expectedNumberOfSteps = calculateExpectedNumberOfSteps(currentTime);
+            expectedNumberOfSteps += expectedStepsOffset; // Adjust expected steps by the offset to account for any discrepancy in actual steps taken
+            if (expectedNumberOfSteps > stepsSinceLastSpeedChange && !reachedTarget) {
+                int stepPinState = digitalRead(stepPin); // Read current state
+                pinMode(stepPin, OUTPUT);
+                digitalWrite(stepPin, !stepPinState); // Start new period with toggled state   
+                stepsSinceLastSpeedChange++;     
+            }
+        } 
     }
 
     // Calculate empirical frequency from encoder counts. We use the position history to calculate how many steps have been taken over a certain time period, 
@@ -371,8 +388,8 @@ void PWMStepper::moveAtFrequency(double frequency) {
 }
 
 void PWMStepper::moveToPosition(int64_t position, double frequency) {
-    int32_t currentPos = getPosition();
-    int32_t steps = position - currentPos;
+    double currentPos = getPosition();
+    double steps = position - currentPos;
     if (steps == 0) {
         return; // Already at position    
     } 
@@ -515,13 +532,15 @@ bool PWMStepper::isEnabled() const {
 }
 
 bool PWMStepper::getDirection() const {
-    int speed = currentFreq;
+    portENTER_CRITICAL(&mux);
+    double speed = currentFreq;
+    portEXIT_CRITICAL(&mux);
     if (state == STEPPER_MOVE_TO_POSITION && abs(speed) < DECELERATION_FREQUENCY) {
         // In moveToPosition mode at low speeds, determine direction based on target position vs current position rather than frequency, 
         // because it is safe to switch direction at low speeds and move towards the target position even if the frequency is not perfectly stable yet. 
         // This helps to ensure we are moving in the correct direction towards the target position, especially when we are starting from a stop (speed = 0) or when we are very
         // close to the target and the frequency is low.
-        int64_t currentPosition = getPosition();
+        double currentPosition = getPosition();
         return currentPosition < targetPosition; // true = forward, false = reverse
     } else {
         // For higher speeds, determine direction based on current frequency sign
@@ -536,9 +555,9 @@ double PWMStepper::getFrequency() const {
     return freq;
 }
 
-int64_t PWMStepper::getTargetPosition() const {
+double PWMStepper::getTargetPosition() const {
     portENTER_CRITICAL(&mux);
-    int64_t pos = targetPosition;
+    double pos = targetPosition;
     portEXIT_CRITICAL(&mux);
     return pos;
 }
@@ -557,8 +576,8 @@ void PWMStepper::printStatus() const {
     Serial.printf("Target Freq: %.2f Hz, ", targetFreq);
     Serial.printf("Acceleration: %.2f steps/s², ", acceleration);
     Serial.printf("Dec Distance: %.2f steps, ", decelerationDistance);
-    Serial.printf("Current Pos: %ld, ", (long) getPosition());
-    Serial.printf("Target Pos: %ld, ", (long) targetPosition);
+    Serial.printf("Current Pos: %.2f, ", getPosition());
+    Serial.printf("Target Pos: %.2f, ", targetPosition);
     Serial.printf("State: ");
     switch (state) {
         case STEPPER_OFF:
@@ -672,8 +691,9 @@ void PWMStepper::stopTimerMode() {
 
 void PWMStepper::onSpeedChange(double newSpeed) {
     if (newSpeed != currentFreq) {
-        lastSpeedChangeMicros = micros();
+        lastSpeedChangeMicros = esp_timer_get_time();
         expectedStepsOffset = calculateExpectedNumberOfSteps(lastSpeedChangeMicros) - stepsSinceLastSpeedChange; // Adjust offset to account for any discrepancy in expected vs actual steps taken since last speed change
+        possitionAtLastSpeedChange = getPosition();
         stepsSinceLastSpeedChange = 0;
     }
     currentFreq = newSpeed;

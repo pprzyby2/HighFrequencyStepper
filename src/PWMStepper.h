@@ -55,6 +55,8 @@ private:
     ledc_timer_t   ledcTimer;
     uint8_t        ledcResolutionBits = 8;   // runtime-selected bits
     ledc_clk_cfg_t ledcClk       = LEDC_USE_APB_CLK; // prefer 80 MHz on S3
+    bool           ledcInitialized = false;
+    double         lastAppliedLedcFrequency = 0;
 
     StepperState state = STEPPER_OFF;
     StepperMode mode = MODE_LEDC;
@@ -75,6 +77,8 @@ private:
     volatile int updateNumber = 0;
     volatile double decelerationDistance = 0;
     volatile int reachedTargetCounter = 0; // Counts how many consecutive updates we've been at the target (for stability)
+    volatile double ledcPositionDrift = 0;
+    volatile double ledcIntegralCorrectionHz = 0;
     static const size_t MAX_POSITION_HISTORY = 100; // Max history size
     std::vector<double> positionHistory; // For tracking position over time
     std::vector<uint64_t> updateTimes; // Timestamps of updates
@@ -94,6 +98,7 @@ private:
     // Deferred command flags for ISR-safe operation
     // ISR sets these flags, main loop processes them via processCommands()
     volatile bool pendingFrequencyChange = false;
+    volatile bool pendingFrequencyFromIsr = false;
     volatile bool pendingStop = false;
     volatile double pendingNewFrequency = 0;
     volatile bool pendingStateChange = false;
@@ -104,7 +109,9 @@ private:
     void requestStopPWM();
     
     // Mode selection methods
+    double applyLedcDriftCompensation(double frequency, bool updateIntegral);
     void startLEDCMode(double frequency);
+    void updateLEDCFrequency(double frequency);
     void startTimerMode(double frequency);
     void stopLEDCMode();
     void stopTimerMode();

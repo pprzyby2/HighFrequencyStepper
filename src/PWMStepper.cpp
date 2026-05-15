@@ -17,6 +17,13 @@ const double PWMStepper::DECELERATION_FREQUENCY = 1000.0; // Target freq when de
 // Constants for position control
 static const double DECEL_SCALING_DISTANCE = 800.0f; // Distance (steps) over which acceleration scales
 static const float MIN_DECEL_ERROR = 50.0f; // Minimum error (steps) before starting deceleration
+static const double LEDC_DRIFT_DEADBAND_STEPS = 1.0;            // Ignore tiny encoder/model mismatch
+static const double LEDC_DRIFT_TO_FREQ_GAIN_BASE = 1.5;         // Proportional Hz correction per step of drift
+static const double LEDC_DRIFT_INTEGRAL_GAIN_BASE = 0; // 0.0008;     // Integral correction gain per update
+static const double LEDC_MAX_DRIFT_CORRECTION_HZ_BASE = 800.0;  // Clamp for total PI correction magnitude
+static const double LEDC_MAX_INTEGRAL_CORRECTION_HZ_BASE = 500.0; // Integral anti-windup clamp
+static const double LEDC_ADAPTIVE_GAIN_REF_HZ = 10000.0;     // Frequency where full correction aggressiveness is reached
+static const double LEDC_ADAPTIVE_MIN_SCALE = 0.60;          // Scale factor at very low LEDC frequencies
 
 const uint64_t PWM_STEPPER_TIMER_DELAY = 500; // 0.5ms
 esp_timer_handle_t pwm_stepper_timer = nullptr;
@@ -203,6 +210,7 @@ void ARDUINO_ISR_ATTR PWMStepper::update() {
     double currentPosition = (double) getPosition();
     uint64_t currentTime = esp_timer_get_time();
     double error = 0;
+    double expectedPosition = currentPosition;
     bool reachedTarget = false;
     bool direction = getDirection(); // true = forward, false = reverse
 
@@ -229,7 +237,7 @@ void ARDUINO_ISR_ATTR PWMStepper::update() {
         if (TRACKING_BY_ENCODER) {
             // In tracking by encoder mode, we calculate the expected position based on the current frequency and time since last speed change, and compare it to the actual position from the encoder. 
             // If we are behind where we expect to be, we can toggle the step pin to catch up. This allows us to compensate for missed steps or stalls, especially at low speeds.
-            double expectedPosition = calculateExpectedPosition(currentTime);
+            expectedPosition = calculateExpectedPosition(currentTime);
             if ((direction && currentPosition < expectedPosition) || (!direction && currentPosition > expectedPosition)) {
                 int stepPinState = digitalRead(stepPin); // Read current state
                 pinMode(stepPin, OUTPUT);
@@ -246,7 +254,12 @@ void ARDUINO_ISR_ATTR PWMStepper::update() {
                 stepsSinceLastSpeedChange++;     
             }
         } 
+    } else if (mode == MODE_LEDC && state != STEPPER_IDLE && state != STEPPER_OFF && currentFreq != 0) {
+        // In LEDC mode, we don't toggle pins manually, but we still track expected position drift.
+        expectedPosition = calculateExpectedPosition(currentTime);
     }
+
+    ledcPositionDrift = expectedPosition - currentPosition;
 
     // Calculate empirical frequency from encoder counts. We use the position history to calculate how many steps have been taken over a certain time period, 
     // which gives us an estimate of the actual frequency. This can help us detect stalls or missed steps.
@@ -315,8 +328,10 @@ void ARDUINO_ISR_ATTR PWMStepper::update() {
                 }
             } else {
                 requestStopPWM();
+                portENTER_CRITICAL_ISR(&mux);
                 pendingNewState = STEPPER_IDLE;
                 pendingStateChange = true;
+                portEXIT_CRITICAL_ISR(&mux);
                 currentFreq = 0;
             }
             break; // Handle below
@@ -336,6 +351,7 @@ void ARDUINO_ISR_ATTR PWMStepper::update() {
                         }
                     }
                 }
+
                 requestStartPWM(newFreq);
             }
             break; // Handle below
@@ -376,14 +392,17 @@ void PWMStepper::accelerateToFrequency(double frequency) {
     state = STEPPER_MOVE_WITH_FREQUENCY;
     targetPosition = 0; // Clear target position
 }
-
 void PWMStepper::moveAtFrequency(double frequency) {
     targetFreq = frequency;
     state = STEPPER_MOVE_WITH_FREQUENCY;
     targetPosition = 0; // Clear target position
     // If we are currently in moveToPosition mode, we want to switch to moveWithFrequency mode immediately with the new target frequency.
     // Acceleration won't be used in this case since we are directly setting the current frequency to the target frequency.
-    startPWM(frequency);
+    if (mode == MODE_LEDC && ledcInitialized) {
+        requestStartPWM(frequency);
+    } else {
+        startPWM(frequency);
+    }
 }
 
 void PWMStepper::moveToPosition(int64_t position, double frequency) {
@@ -408,18 +427,23 @@ void PWMStepper::startPWM(double frequency) {
     
     // Choose mode based on frequency threshold
     if (abs(frequency) >= FREQUENCY_THRESHOLD) {
+        if (state == STEPPER_MOVE_WITH_FREQUENCY) {
+            onSpeedChange(frequency);
+        }
         if (mode != MODE_LEDC) {
             stopTimerMode(); // Stop Timer mode if running
+            startLEDCMode(frequency);
+        } else {
+            updateLEDCFrequency(frequency);
         }
-        // High frequency - use LEDC mode
-        startLEDCMode(frequency);
     } else {
         if (mode != MODE_TIMER) {
             stopLEDCMode(); // Stop LEDC mode if running
+            startTimerMode(frequency);
+        } else {
+            startTimerMode(frequency);
         }
         // Low frequency - use Timer mode
-        startTimerMode(frequency);
-
     }
 }
 
@@ -442,9 +466,12 @@ void PWMStepper::stopPWM() {
 
 // ISR-safe: request PWM start (sets flag, actual LEDC work done in processCommands)
 void PWMStepper::requestStartPWM(double frequency) {
+    portENTER_CRITICAL_ISR(&mux);
     pendingNewFrequency = frequency;
     pendingFrequencyChange = true;
+    pendingFrequencyFromIsr = xPortInIsrContext();
     pendingStop = false;
+    portEXIT_CRITICAL_ISR(&mux);
     
     // Update speed tracking immediately (safe for ISR)
     onSpeedChange(frequency);
@@ -452,21 +479,48 @@ void PWMStepper::requestStartPWM(double frequency) {
 
 // ISR-safe: request PWM stop (sets flag, actual LEDC work done in processCommands)
 void PWMStepper::requestStopPWM() {
+    portENTER_CRITICAL_ISR(&mux);
     pendingStop = true;
     pendingFrequencyChange = false;
+    pendingFrequencyFromIsr = false;
+    portEXIT_CRITICAL_ISR(&mux);
 }
 
 // Process pending PWM commands - call this from main loop, NOT from ISR
 void PWMStepper::processCommands() {
-    // Handle pending state change
+    bool localPendingStateChange = false;
+    StepperState localPendingState = STEPPER_OFF;
+    bool localPendingStop = false;
+    bool localPendingFrequencyChange = false;
+    bool localPendingFrequencyFromIsr = false;
+    double localPendingFrequency = 0;
+
+    // Atomically snapshot ISR-written command flags/data.
+    portENTER_CRITICAL(&mux);
     if (pendingStateChange) {
-        state = pendingNewState;
+        localPendingStateChange = true;
+        localPendingState = pendingNewState;
         pendingStateChange = false;
     }
-    
-    // Handle pending stop
     if (pendingStop) {
+        localPendingStop = true;
         pendingStop = false;
+        pendingFrequencyChange = false;
+    } else if (pendingFrequencyChange) {
+        localPendingFrequencyChange = true;
+        localPendingFrequency = pendingNewFrequency;
+        localPendingFrequencyFromIsr = pendingFrequencyFromIsr;
+        pendingFrequencyFromIsr = false;
+        pendingFrequencyChange = false;
+    }
+    portEXIT_CRITICAL(&mux);
+
+    if (localPendingStateChange) {
+        state = localPendingState;
+    }
+
+    // Handle pending stop
+    if (localPendingStop) {
         setTargetFrequency(0);
         if (mode == MODE_LEDC) {
             stopLEDCMode();
@@ -482,18 +536,24 @@ void PWMStepper::processCommands() {
     }
     
     // Handle pending frequency change
-    if (pendingFrequencyChange) {
-        double frequency = pendingNewFrequency;
-        pendingFrequencyChange = false;
+    if (localPendingFrequencyChange) {
+        double frequency = localPendingFrequency;
+
+        // External requests (not coming from ISR update loop) are corrected immediately.
+        if (!localPendingFrequencyFromIsr && state == STEPPER_MOVE_WITH_FREQUENCY && abs(frequency) >= FREQUENCY_THRESHOLD) {
+            frequency = applyLedcDriftCompensation(frequency, false);
+            onSpeedChange(frequency);
+        }
         
         // Choose mode based on frequency threshold
         if (abs(frequency) >= FREQUENCY_THRESHOLD) {
             // High frequency - use LEDC mode
             if (mode != MODE_LEDC) {
                 stopTimerMode();
+                startLEDCMode(frequency);
+            } else {
+                updateLEDCFrequency(frequency);
             }
-            mode = MODE_LEDC;
-            startLEDCMode(frequency);
         } else {
             // Low frequency - use Timer mode
             if (mode != MODE_TIMER) {
@@ -503,6 +563,7 @@ void PWMStepper::processCommands() {
             startTimerMode(frequency);
         }
     }
+
 }
 
 void PWMStepper::setTargetFrequency(double frequency) {
@@ -596,10 +657,56 @@ void PWMStepper::printStatus() const {
     }
 }
 
+double PWMStepper::applyLedcDriftCompensation(double frequency, bool updateIntegral) {
+    if (frequency == 0) {
+        return frequency;
+    }
+
+    double correctedFrequency = frequency;
+    double expectedPosition = calculateExpectedPosition(esp_timer_get_time());
+    double currentPosition = getPosition();
+    ledcPositionDrift = expectedPosition - currentPosition;
+    return correctedFrequency + ledcPositionDrift * LEDC_DRIFT_TO_FREQ_GAIN_BASE; // Apply proportional correction based on position drift
+
+
+    double drift = ledcPositionDrift;
+    double freqRatio = abs(correctedFrequency) / LEDC_ADAPTIVE_GAIN_REF_HZ;
+    if (freqRatio > 1.0) freqRatio = 1.0;
+
+    double adaptiveScale = LEDC_ADAPTIVE_MIN_SCALE + (1.0 - LEDC_ADAPTIVE_MIN_SCALE) * freqRatio;
+    double adaptiveGainP = LEDC_DRIFT_TO_FREQ_GAIN_BASE * adaptiveScale;
+    double adaptiveGainI = LEDC_DRIFT_INTEGRAL_GAIN_BASE * adaptiveScale;
+    double adaptiveLimit = LEDC_MAX_DRIFT_CORRECTION_HZ_BASE * adaptiveScale;
+    double adaptiveIntegralLimit = LEDC_MAX_INTEGRAL_CORRECTION_HZ_BASE * adaptiveScale;
+
+    if (updateIntegral) {
+        if (abs(drift) > LEDC_DRIFT_DEADBAND_STEPS) {
+            ledcIntegralCorrectionHz += drift * adaptiveGainI;
+        } else {
+            ledcIntegralCorrectionHz *= 0.95;
+        }
+    }
+
+    if (ledcIntegralCorrectionHz > adaptiveIntegralLimit) ledcIntegralCorrectionHz = adaptiveIntegralLimit;
+    if (ledcIntegralCorrectionHz < -adaptiveIntegralLimit) ledcIntegralCorrectionHz = -adaptiveIntegralLimit;
+
+    double correction = drift * adaptiveGainP + ledcIntegralCorrectionHz;
+    if (correction > adaptiveLimit) correction = adaptiveLimit;
+    if (correction < -adaptiveLimit) correction = -adaptiveLimit;
+
+    correctedFrequency += (correctedFrequency > 0 ? correction : -correction);
+    if (correctedFrequency > maxFreq) correctedFrequency = maxFreq;
+    if (correctedFrequency < -maxFreq) correctedFrequency = -maxFreq;
+
+    return correctedFrequency;
+}
+
 // Robust LEDC setup that auto-picks clock and resolution
 void PWMStepper::startLEDCMode(double frequency)
 {
-    // Detach first to avoid "not initialized" errors
+    uint32_t requestedFrequency = (uint32_t)max(1.0, abs(frequency));
+
+    // Detach first to avoid stale channel routing when switching from timer mode.
     ledcDetachPin(stepPin);
 
     // Try fast clocks first on S3: 160 MHz, then 80 MHz, then AUTO (as last resort)
@@ -619,7 +726,7 @@ void PWMStepper::startLEDCMode(double frequency)
 
     for (ledc_clk_cfg_t clk : clocksToTry) {
         for (int bits = startBits; bits >= 1; --bits) {
-            if (try_config_ledc_timer(ledcSpeedMode, ledcTimer, bits, (uint32_t)abs(frequency), clk)) {
+            if (try_config_ledc_timer(ledcSpeedMode, ledcTimer, bits, requestedFrequency, clk)) {
                 chosenBits = (uint8_t)bits;
                 chosenClk = clk;
                 configured = true;
@@ -632,6 +739,7 @@ void PWMStepper::startLEDCMode(double frequency)
     if (!configured) {
         ESP_LOGE("PWMStepper", "LEDC setup failed for %.1f Hz at all clocks/resolutions, using Timer mode", frequency);
         mode = MODE_TIMER;
+        ledcInitialized = false;
         startTimerMode(frequency);
         return;
     }
@@ -651,6 +759,7 @@ void PWMStepper::startLEDCMode(double frequency)
     if (err != ESP_OK) {
         // ESP_LOGE("PWMStepper", "LEDC channel config failed (%d), falling back to Timer mode", (int)err);
         mode = MODE_TIMER;
+        ledcInitialized = false;
         startTimerMode(frequency);
         return;
     }
@@ -658,12 +767,40 @@ void PWMStepper::startLEDCMode(double frequency)
     // Write initial duty to start output
     ledcResolutionBits = chosenBits;
     ledcClk = chosenClk;
-    ledcFrequency = (uint32_t) abs(frequency);
+    ledcFrequency = requestedFrequency;
+    lastAppliedLedcFrequency = (double)requestedFrequency;
+    ledcIntegralCorrectionHz = 0;
+    ledcInitialized = true;
 
     //ledcUpdateDuty(ledcSpeedMode, (ledc_channel_t)ledcChannel);
     ledcWrite(ledcChannel, 1u << (chosenBits - 1)); // ~50%
 
     mode = MODE_LEDC;
+}
+
+void PWMStepper::updateLEDCFrequency(double frequency) {
+    uint32_t requestedFrequency = (uint32_t)max(1.0, abs(frequency));
+
+    // Ignore tiny changes to reduce timer retune jitter under very frequent updates.
+    if (abs((double)requestedFrequency - lastAppliedLedcFrequency) < 1.0) {
+        return;
+    }
+
+    if (!ledcInitialized) {
+        startLEDCMode(frequency);
+        return;
+    }
+
+    uint32_t appliedFrequency = ledc_set_freq(ledcSpeedMode, ledcTimer, requestedFrequency);
+    if (appliedFrequency == 0) {
+        ESP_LOGW("PWMStepper", "ledc_set_freq failed for %u Hz, reinitializing LEDC", requestedFrequency);
+        frequency = applyLedcDriftCompensation(frequency, true);
+        startLEDCMode(frequency);
+        return;
+    }
+
+    ledcFrequency = appliedFrequency;
+    lastAppliedLedcFrequency = (double)appliedFrequency;
 }
 
 void PWMStepper::stopLEDCMode() {
@@ -672,6 +809,9 @@ void PWMStepper::stopLEDCMode() {
 
     //ledcWrite(ledcChannel, 0);  // 0% duty cycle
     ledcDetachPin(stepPin);
+    ledcInitialized = false;
+    lastAppliedLedcFrequency = 0;
+    ledcIntegralCorrectionHz = 0;
 }
 
 // Timer Mode Methods
@@ -687,13 +827,20 @@ void PWMStepper::stopTimerMode() {
 void PWMStepper::onSpeedChange(double newSpeed) {
     if (newSpeed != currentFreq) {
         uint64_t currentMicros = esp_timer_get_time();
-        double expectedNumberOfSteps = calculateExpectedNumberOfSteps(currentMicros);
-        expectedPossitionAtLastSpeedChange = calculateExpectedPosition(currentMicros);
+        double expectedNumberOfSteps;
+        if (currentFreq == 0.0) {
+            expectedNumberOfSteps = 0;
+            expectedPossitionAtLastSpeedChange = getPosition(); // If starting from stop, set expected position at last speed change to current position
+        } else {
+            expectedNumberOfSteps = calculateExpectedNumberOfSteps(currentMicros);
+            expectedPossitionAtLastSpeedChange = calculateExpectedPosition(currentMicros);
+        }
+        
         lastSpeedChangeMicros = currentMicros;
         stepsSinceLastSpeedChange = 0;
         // static int debugCounter = 0;
         // if (debugCounter++ % 100 == 0) {
-        //     Serial.printf("Speed change: new=%.2f Hz, expectedNumberOfSteps=%.5f, expectedPos=%.5f\n", newSpeed, expectedNumberOfSteps, expectedPossitionAtLastSpeedChange);
+        //     Serial.printf("Speed change: new=%.2f Hz, position error=%.5f\n", newSpeed, expectedPossitionAtLastSpeedChange - getPosition());
         // }
     }
     currentFreq = newSpeed;

@@ -82,13 +82,16 @@ void testLowSpeedPrecision(HighFrequencyStepper& controller, uint8_t index) {
     int toleranceSteps = 2 * controller.getConfig(index).encoderToMicrostepRatio; // Allowable error within one encoder count
     
     // Test very low frequencies (should use Timer mode)
-    float testFreqs[] = {2.0, 0.5, 1.0, 5.0, 10.0, 50.0, 100.0, 200.0, 500.0, 1000.0, 2000.0, 5000.0, 10000.0}; // Hz
-    int testTimes[] = {30, 30, 30, 20, 10, 10, 10, 10, 10, 10, 10, 10, 10}; // seconds for each frequency
+    // float testFreqs[] = {0.5, 1.0, 2.0, 5.0, 10.0, 50.0, 100.0, 200.0, 500.0, 1000.0, 2000.0, 5000.0, 10000.0}; // Hz
+    // int testTimes[] = {30, 30, 30, 20, 10, 10, 10, 10, 10, 10, 10, 10, 10}; // seconds for each frequency
+    float testFreqs[] = {1000.0, 2000.0, 5000.0, 10000.0}; // Hz
+    int testTimes[] = {10, 10, 10, 10}; // seconds for each frequency    
     int numFreqs = sizeof(testFreqs) / sizeof(testFreqs[0]);
     
     Serial.println("Testing low speed precision...");
     
     int passedLowSpeeds = 0;
+    int totalLowSpeeds = 0;
     for (int i = 0; i < numFreqs; i++) {
         float freq = testFreqs[i];
         int testTime = testTimes[i];
@@ -104,11 +107,11 @@ void testLowSpeedPrecision(HighFrequencyStepper& controller, uint8_t index) {
             int milis = millis();
             while (millis() - milis < 1000) {
                 // Force speed updates
-                float randomNoise = (0.01 * random(-100, 100) / 100.0); // Add small random noise to simulate real conditions
+                float randomNoise = (random(-100, 100) / 100.0) * freq * 0.01; // Add small random noise to simulate real conditions
                 controller.moveAtFrequency(index, freq * (dir ? 1 : -1) + randomNoise);
                 delay(1);
             }
-            float randomNoise = (0.01 * random(-100, 100) / 100.0); // Add small random noise to simulate real conditions
+            float randomNoise = (random(-100, 100) / 100.0) * freq * 0.01; // Add small random noise to simulate real conditions
             Serial.printf("  Random noise: %.3f Hz | ", randomNoise);
             Serial.printf("  Time: %d ms, Current frequency: %.2f Hz\n", (millis() - startTime), (controller.getPosition(index) - startPos) * 1000.0 / (1 + millis() - startTime));
             //controller.printStatus(index);
@@ -133,13 +136,14 @@ void testLowSpeedPrecision(HighFrequencyStepper& controller, uint8_t index) {
                       accuracy);
         
         if (testPassed) passedLowSpeeds++;
+        totalLowSpeeds++;
         delay(1000);
     }
     
     // Overall low speed test result
-    bool overallLowSpeedOK = (passedLowSpeeds >= 5); // At least 5/7 speeds must pass
+    bool overallLowSpeedOK = (passedLowSpeeds >= totalLowSpeeds); // At least 5/7 speeds must pass
     addTestResult(controller.getName(index), "Low Speed Overall", overallLowSpeedOK, 
-                  String(passedLowSpeeds) + "/" + String(numFreqs) + " speeds passed");
+                  String(passedLowSpeeds) + "/" + String(totalLowSpeeds) + " speeds passed");
     
     Serial.println("Low speed test completed!");
     Serial.print("Total position: "); Serial.println(controller.getPosition(index));

@@ -180,6 +180,9 @@ double ARDUINO_ISR_ATTR alignPositionToEncoder(double position, float encoderSca
 }
 
 double ARDUINO_ISR_ATTR PWMStepper::calculateExpectedNumberOfSteps(uint64_t currentTime) {
+    if (currentFreq == 0) {
+        return 0; // No movement expected if frequency is zero
+    }
     uint64_t microsSinceLastSpeedChange = currentTime - lastSpeedChangeMicros;
     double expectedMicrostepPeriod = 1000000.0 / abs(currentFreq * 2); // Period in microseconds for a full step (times 2 because we toggle 0-1 and 1-0 for each step)
     double expectedNumberOfSteps = double(microsSinceLastSpeedChange) / expectedMicrostepPeriod;   
@@ -375,6 +378,7 @@ void PWMStepper::accelerateToFrequency(double frequency) {
     targetFreq = frequency;
     state = STEPPER_MOVE_WITH_FREQUENCY;
     targetPosition = 0; // Clear target position
+    resetPosition(getPosition()); // Reset position tracking to avoid drift during acceleration
 }
 
 void PWMStepper::moveAtFrequency(double frequency) {
@@ -383,7 +387,8 @@ void PWMStepper::moveAtFrequency(double frequency) {
     targetPosition = 0; // Clear target position
     // If we are currently in moveToPosition mode, we want to switch to moveWithFrequency mode immediately with the new target frequency.
     // Acceleration won't be used in this case since we are directly setting the current frequency to the target frequency.
-    startPWM(frequency);
+    requestStartPWM(frequency);
+    // startPWM(frequency);
 }
 
 void PWMStepper::moveToPosition(int64_t position, double frequency) {
@@ -409,14 +414,16 @@ void PWMStepper::startPWM(double frequency) {
     // Choose mode based on frequency threshold
     if (abs(frequency) >= FREQUENCY_THRESHOLD) {
         if (mode != MODE_LEDC) {
-            stopTimerMode(); // Stop Timer mode if running
+            
         }
+        stopTimerMode(); // Stop Timer mode if running
         // High frequency - use LEDC mode
         startLEDCMode(frequency);
     } else {
         if (mode != MODE_TIMER) {
-            stopLEDCMode(); // Stop LEDC mode if running
+            
         }
+        stopLEDCMode(); // Stop LEDC mode if running
         // Low frequency - use Timer mode
         startTimerMode(frequency);
 
@@ -492,14 +499,14 @@ void PWMStepper::processCommands() {
             if (mode != MODE_LEDC) {
                 stopTimerMode();
             }
-            mode = MODE_LEDC;
+            // mode = MODE_LEDC;
             startLEDCMode(frequency);
         } else {
             // Low frequency - use Timer mode
             if (mode != MODE_TIMER) {
                 stopLEDCMode();
             }
-            mode = MODE_TIMER;
+            // mode = MODE_TIMER;
             startTimerMode(frequency);
         }
     }
@@ -676,8 +683,8 @@ void PWMStepper::stopLEDCMode() {
 
 // Timer Mode Methods
 void PWMStepper::startTimerMode(double frequency) {
-    mode = MODE_TIMER;
     pinMode(stepPin, OUTPUT);
+    mode = MODE_TIMER;
 }
 
 void PWMStepper::stopTimerMode() {
@@ -685,18 +692,30 @@ void PWMStepper::stopTimerMode() {
 }
 
 void PWMStepper::onSpeedChange(double newSpeed) {
+    if (newSpeed == 0) {
+        resetPosition(getPosition()); // Reset position tracking when stopping to avoid drift on next start
+    }
     if (newSpeed != currentFreq) {
         uint64_t currentMicros = esp_timer_get_time();
         double expectedNumberOfSteps = calculateExpectedNumberOfSteps(currentMicros);
         expectedPossitionAtLastSpeedChange = calculateExpectedPosition(currentMicros);
+        double positionError = getPosition() - expectedPossitionAtLastSpeedChange;
         lastSpeedChangeMicros = currentMicros;
         stepsSinceLastSpeedChange = 0;
         // static int debugCounter = 0;
         // if (debugCounter++ % 100 == 0) {
-        //     Serial.printf("Speed change: new=%.2f Hz, expectedNumberOfSteps=%.5f, expectedPos=%.5f\n", newSpeed, expectedNumberOfSteps, expectedPossitionAtLastSpeedChange);
+        //     Serial.printf("Speed change: new=%.2f Hz, expectedNumberOfSteps=%.5f, expectedPos=%.5f, positionError=%.5f\n", newSpeed, expectedNumberOfSteps, expectedPossitionAtLastSpeedChange, positionError);
         // }
     }
     currentFreq = newSpeed;
+}
+
+void PWMStepper::resetPosition(double newPosition) {
+    portENTER_CRITICAL(&mux);
+    expectedPossitionAtLastSpeedChange = newPosition;
+    lastSpeedChangeMicros = esp_timer_get_time();
+    stepsSinceLastSpeedChange = 0;
+    portEXIT_CRITICAL(&mux);
 }
 
 // Set LEDC resolution (1-16 bits)

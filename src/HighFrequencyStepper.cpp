@@ -670,6 +670,7 @@ bool HighFrequencyStepper::setPosition(uint8_t index, int32_t position) {
 
     int64_t pcntValue = (int64_t(position) / configs[index].encoderToMicrostepRatio);
     pulseCounters[index]->setCount(pcntValue);
+    pwmSteppers[index]->resetPosition((double)position);
     status[index].currentPosition = pcntValue;
     status[index].targetPosition = pcntValue;
     return true;

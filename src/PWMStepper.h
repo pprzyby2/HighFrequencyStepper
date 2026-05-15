@@ -196,6 +196,8 @@ public:
      */
     void moveToPosition(int64_t position, double frequency);
     
+    void resetPosition(double newPosition);
+
     /**
      * @brief Check if currently executing a moveToPosition command
      * @return true if moving to position, false otherwise

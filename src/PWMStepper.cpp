@@ -159,7 +159,6 @@ void PWMStepper::begin() {
     // Add to instances list AFTER all initialization is complete
     pwmStepperInstances.push_back(this);
     initStepperTimers();
-    expectedStepsOffset = 0; // Initialize expected steps offset
     state = STEPPER_IDLE;
 
     Serial.println("PWMStepper initialized successfully!");
@@ -184,12 +183,13 @@ double ARDUINO_ISR_ATTR PWMStepper::calculateExpectedNumberOfSteps(uint64_t curr
     uint64_t microsSinceLastSpeedChange = currentTime - lastSpeedChangeMicros;
     double expectedMicrostepPeriod = 1000000.0 / abs(currentFreq * 2); // Period in microseconds for a full step (times 2 because we toggle 0-1 and 1-0 for each step)
     double expectedNumberOfSteps = double(microsSinceLastSpeedChange) / expectedMicrostepPeriod;   
+    // expectedNumberOfSteps += expectedStepsOffset; // Adjust expected steps by the offset to account for any discrepancy in actual steps taken since last speed change
     return expectedNumberOfSteps;
 }
 
 double ARDUINO_ISR_ATTR PWMStepper::calculateExpectedPosition(uint64_t currentTime) {
     double expectedSteps = calculateExpectedNumberOfSteps(currentTime);
-    return possitionAtLastSpeedChange + ((expectedSteps + expectedStepsOffset) * (getDirection() ? 0.5 : -0.5)); // Add expected steps to position at last speed change, accounting for direction
+    return expectedPossitionAtLastSpeedChange + (expectedSteps * (getDirection() ? 0.5 : -0.5)); // Add expected steps to position at last speed change, accounting for direction
 }
 
 void ARDUINO_ISR_ATTR PWMStepper::update() {
@@ -239,7 +239,6 @@ void ARDUINO_ISR_ATTR PWMStepper::update() {
         } else {
             // Calculate how many steps we should have taken since the last speed change based on the current frequency
             double expectedNumberOfSteps = calculateExpectedNumberOfSteps(currentTime);
-            expectedNumberOfSteps += expectedStepsOffset; // Adjust expected steps by the offset to account for any discrepancy in actual steps taken
             if (expectedNumberOfSteps > stepsSinceLastSpeedChange && !reachedTarget) {
                 int stepPinState = digitalRead(stepPin); // Read current state
                 pinMode(stepPin, OUTPUT);
@@ -409,14 +408,16 @@ void PWMStepper::startPWM(double frequency) {
     
     // Choose mode based on frequency threshold
     if (abs(frequency) >= FREQUENCY_THRESHOLD) {
+        if (mode != MODE_LEDC) {
+            stopTimerMode(); // Stop Timer mode if running
+        }
         // High frequency - use LEDC mode
-        mode = MODE_LEDC;
-        stopTimerMode(); // Stop Timer mode if running
         startLEDCMode(frequency);
     } else {
+        if (mode != MODE_TIMER) {
+            stopLEDCMode(); // Stop LEDC mode if running
+        }
         // Low frequency - use Timer mode
-        mode = MODE_TIMER;
-        stopLEDCMode(); // Stop LEDC mode if running
         startTimerMode(frequency);
 
     }
@@ -663,11 +664,6 @@ void PWMStepper::startLEDCMode(double frequency)
     ledcWrite(ledcChannel, 1u << (chosenBits - 1)); // ~50%
 
     mode = MODE_LEDC;
-    // ESP_LOGI("PWMStepper", "LEDC OK: f=%.1f Hz, res=%u-bit, clk=%s",
-    //          frequency,
-    //          (unsigned)chosenBits,
-    //          (chosenClk == LEDC_USE_PLL_DIV_CLK ? "PLL160" :
-    //           chosenClk == LEDC_USE_APB_CLK ? "APB80" : "AUTO"));
 }
 
 void PWMStepper::stopLEDCMode() {
@@ -685,16 +681,20 @@ void PWMStepper::startTimerMode(double frequency) {
 }
 
 void PWMStepper::stopTimerMode() {
-    expectedStepsOffset = 0; // Reset expected steps offset when stopping timer mode
     digitalWrite(stepPin, LOW); // Ensure pin is LOW
 }
 
 void PWMStepper::onSpeedChange(double newSpeed) {
     if (newSpeed != currentFreq) {
-        lastSpeedChangeMicros = esp_timer_get_time();
-        expectedStepsOffset = calculateExpectedNumberOfSteps(lastSpeedChangeMicros) - stepsSinceLastSpeedChange; // Adjust offset to account for any discrepancy in expected vs actual steps taken since last speed change
-        possitionAtLastSpeedChange = getPosition();
+        uint64_t currentMicros = esp_timer_get_time();
+        double expectedNumberOfSteps = calculateExpectedNumberOfSteps(currentMicros);
+        expectedPossitionAtLastSpeedChange = calculateExpectedPosition(currentMicros);
+        lastSpeedChangeMicros = currentMicros;
         stepsSinceLastSpeedChange = 0;
+        // static int debugCounter = 0;
+        // if (debugCounter++ % 100 == 0) {
+        //     Serial.printf("Speed change: new=%.2f Hz, expectedNumberOfSteps=%.5f, expectedPos=%.5f\n", newSpeed, expectedNumberOfSteps, expectedPossitionAtLastSpeedChange);
+        // }
     }
     currentFreq = newSpeed;
 }

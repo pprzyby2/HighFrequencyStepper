@@ -87,10 +87,9 @@ private:
     static const double DECELERATION_FREQUENCY; // 1000 Hz - target freq when decelerating
     
     // Timer mode variables
-    volatile uint64_t lastSpeedChangeMicros;
-    volatile uint32_t stepsSinceLastSpeedChange;
-    volatile double possitionAtLastSpeedChange;
-    volatile double expectedStepsOffset;
+    volatile uint64_t lastSpeedChangeMicros = 0; // Timestamp of last speed change, used for expected position calculation
+    volatile uint32_t stepsSinceLastSpeedChange = 0; // Steps taken since last speed change, used for expected position calculation
+    volatile double expectedPossitionAtLastSpeedChange = 0; // Position at the time of last speed change, used for expected position calculation
     
     // Deferred command flags for ISR-safe operation
     // ISR sets these flags, main loop processes them via processCommands()

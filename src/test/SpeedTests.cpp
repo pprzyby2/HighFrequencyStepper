@@ -82,8 +82,8 @@ void testLowSpeedPrecision(HighFrequencyStepper& controller, uint8_t index) {
     int toleranceSteps = 2 * controller.getConfig(index).encoderToMicrostepRatio; // Allowable error within one encoder count
     
     // Test very low frequencies (should use Timer mode)
-    float testFreqs[] = {2.0, 0.5, 1.0, 5.0, 10.0, 50.0, 100.0, 200.0, 500.0};
-    int testTimes[] = {30, 30, 30, 20, 10, 5, 5, 5, 5}; // seconds for each frequency
+    float testFreqs[] = {2.0, 0.5, 1.0, 5.0, 10.0, 50.0, 100.0, 200.0, 500.0, 1000.0, 2000.0, 5000.0, 10000.0}; // Hz
+    int testTimes[] = {30, 30, 30, 20, 10, 10, 10, 10, 10, 10, 10, 10, 10}; // seconds for each frequency
     int numFreqs = sizeof(testFreqs) / sizeof(testFreqs[0]);
     
     Serial.println("Testing low speed precision...");
@@ -96,11 +96,20 @@ void testLowSpeedPrecision(HighFrequencyStepper& controller, uint8_t index) {
         
         controller.moveAtFrequency(index, freq * (dir ? 1 : -1));
         //controller.accelerateToFrequency(index, freq * (dir ? 1 : -1), true);
-        delay(5000); // Allow time to stabilize encoder reading
+        delay(1000); // Allow time to stabilize encoder reading
         uint32_t startTime = millis();
         int32_t startPos = controller.getPosition(index);
         for (int t = 0; t < testTime; t++) {
-            delay(1000);
+            // delay(1000);
+            int milis = millis();
+            while (millis() - milis < 1000) {
+                // Force speed updates
+                float randomNoise = (0.01 * random(-100, 100) / 100.0); // Add small random noise to simulate real conditions
+                controller.moveAtFrequency(index, freq * (dir ? 1 : -1) + randomNoise);
+                delay(1);
+            }
+            float randomNoise = (0.01 * random(-100, 100) / 100.0); // Add small random noise to simulate real conditions
+            Serial.printf("  Random noise: %.3f Hz | ", randomNoise);
             Serial.printf("  Time: %d ms, Current frequency: %.2f Hz\n", (millis() - startTime), (controller.getPosition(index) - startPos) * 1000.0 / (1 + millis() - startTime));
             //controller.printStatus(index);
         }

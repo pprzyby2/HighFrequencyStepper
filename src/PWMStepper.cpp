@@ -196,11 +196,13 @@ double ARDUINO_ISR_ATTR PWMStepper::calculateExpectedPosition(uint64_t currentTi
 }
 
 void ARDUINO_ISR_ATTR PWMStepper::update() {
-    // Read 64-bit variables atomically at the start of ISR
+    // Read critical state and variables atomically to prevent race condition
+    // where state changes between being read and used in switch statement
     portENTER_CRITICAL_ISR(&mux);
     double localTargetPosition = (double) targetPosition;
     double localTargetFreq = (double) targetFreq;
     double localAcceleration = (double) acceleration;
+    StepperState localState = state;  // Capture state atomically
     portEXIT_CRITICAL_ISR(&mux);
     
     double currentPosition = (double) getPosition();
@@ -211,7 +213,7 @@ void ARDUINO_ISR_ATTR PWMStepper::update() {
 
     // If we are in moveToPosition mode, calculate error and check if we've reached the target. We use a counter to ensure we've been at the target for several consecutive updates 
     // to avoid noise causing premature stopping.
-    if (state == STEPPER_MOVE_TO_POSITION) {
+    if (localState == STEPPER_MOVE_TO_POSITION) {
         localTargetPosition = alignPositionToEncoder(localTargetPosition, encoderScale); // Ensure target position is aligned to encoder increments
         error = localTargetPosition - currentPosition;
         if (abs(error) < encoderScale / 2.0) {
@@ -277,7 +279,7 @@ void ARDUINO_ISR_ATTR PWMStepper::update() {
     // We can simplify this by using the fact that frequency is proportional to speed, so we can just use acceleration * (update interval in seconds) as the frequency change per update interval.
     double unitFrequencyChange = localAcceleration * (freqUpdateInterval * PWM_STEPPER_TIMER_DELAY / 1000000.0);
     
-    switch (state) {
+    switch (localState) {
         case STEPPER_OFF:
             return;
         case STEPPER_IDLE:
@@ -375,16 +377,24 @@ void PWMStepper::disable() {
 }
 
 void PWMStepper::accelerateToFrequency(double frequency) {
+    // Use spinlock to ensure atomic update of state and target parameters
+    // This prevents race condition where ISR could see inconsistent state
+    portENTER_CRITICAL(&mux);
     targetFreq = frequency;
     state = STEPPER_MOVE_WITH_FREQUENCY;
     targetPosition = 0; // Clear target position
+    portEXIT_CRITICAL(&mux);
     resetPosition(getPosition()); // Reset position tracking to avoid drift during acceleration
 }
 
 void PWMStepper::moveAtFrequency(double frequency) {
+    // Use spinlock to ensure atomic update of state and targetPosition
+    // This prevents race condition where ISR reads state=MOVE_TO_POSITION but targetPosition=0
+    portENTER_CRITICAL(&mux);
     targetFreq = frequency;
     state = STEPPER_MOVE_WITH_FREQUENCY;
     targetPosition = 0; // Clear target position
+    portEXIT_CRITICAL(&mux);
     // If we are currently in moveToPosition mode, we want to switch to moveWithFrequency mode immediately with the new target frequency.
     // Acceleration won't be used in this case since we are directly setting the current frequency to the target frequency.
     requestStartPWM(frequency);
@@ -398,9 +408,13 @@ void PWMStepper::moveToPosition(int64_t position, double frequency) {
         return; // Already at position    
     } 
 
-    setTargetPosition(position);
-    setTargetFrequency(frequency);
+    // Use spinlock to ensure atomic update of state and target parameters
+    // This prevents race condition where ISR could see inconsistent state
+    portENTER_CRITICAL(&mux);
+    targetPosition = position;
+    targetFreq = frequency;
     state = STEPPER_MOVE_TO_POSITION;
+    portEXIT_CRITICAL(&mux);
 }
 
 bool PWMStepper::isMovingToPosition() const {
@@ -467,7 +481,9 @@ void PWMStepper::requestStopPWM() {
 void PWMStepper::processCommands() {
     // Handle pending state change
     if (pendingStateChange) {
+        portENTER_CRITICAL(&mux);
         state = pendingNewState;
+        portEXIT_CRITICAL(&mux);
         pendingStateChange = false;
     }
     
@@ -481,9 +497,11 @@ void PWMStepper::processCommands() {
             stopTimerMode();
         }
         digitalWrite(stepPin, LOW);
+        portENTER_CRITICAL(&mux);
         if (state != STEPPER_OFF) {
             state = STEPPER_IDLE;
         }
+        portEXIT_CRITICAL(&mux);
         onSpeedChange(0);
         return;
     }

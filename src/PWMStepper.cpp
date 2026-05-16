@@ -43,6 +43,7 @@ void processAllStepperCommands() {
 // FreeRTOS task for processing stepper commands
 static TaskHandle_t stepperCommandTaskHandle = nullptr;
 static const uint32_t COMMAND_TASK_DELAY_MS = 1; // 1ms between command processing
+static const char* TAG = "PWMStepper";
 
 static void stepperCommandTask(void* parameter) {
     for (;;) {
@@ -379,10 +380,11 @@ void PWMStepper::disable() {
 void PWMStepper::accelerateToFrequency(double frequency) {
     // Use spinlock to ensure atomic update of state and target parameters
     // This prevents race condition where ISR could see inconsistent state
+    double currentPosition = getPosition();
     portENTER_CRITICAL(&mux);
     targetFreq = frequency;
     state = STEPPER_MOVE_WITH_FREQUENCY;
-    targetPosition = 0; // Clear target position
+    targetPosition = currentPosition; // Keep target near current position to avoid stale MOVE_TO_POSITION deceleration
     portEXIT_CRITICAL(&mux);
     resetPosition(getPosition()); // Reset position tracking to avoid drift during acceleration
 }
@@ -390,10 +392,11 @@ void PWMStepper::accelerateToFrequency(double frequency) {
 void PWMStepper::moveAtFrequency(double frequency) {
     // Use spinlock to ensure atomic update of state and targetPosition
     // This prevents race condition where ISR reads state=MOVE_TO_POSITION but targetPosition=0
+    double currentPosition = getPosition();
     portENTER_CRITICAL(&mux);
     targetFreq = frequency;
     state = STEPPER_MOVE_WITH_FREQUENCY;
-    targetPosition = 0; // Clear target position
+    targetPosition = currentPosition; // Keep target near current position to avoid stale MOVE_TO_POSITION deceleration
     portEXIT_CRITICAL(&mux);
     // If we are currently in moveToPosition mode, we want to switch to moveWithFrequency mode immediately with the new target frequency.
     // Acceleration won't be used in this case since we are directly setting the current frequency to the target frequency.
@@ -526,6 +529,34 @@ void PWMStepper::processCommands() {
             }
             // mode = MODE_TIMER;
             startTimerMode(frequency);
+        }
+    }
+
+    static uint64_t lastDiagnosticLogMicros = 0;
+    uint64_t nowMicros = esp_timer_get_time();
+    if (nowMicros - lastDiagnosticLogMicros >= 5000000ULL) {
+        portENTER_CRITICAL(&mux);
+        StepperState localState = state;
+        double localCurrentFreq = currentFreq;
+        double localTargetFreq = targetFreq;
+        double localTargetPosition = targetPosition;
+        double localEncoderFrequency = encoderFrequency;
+        portEXIT_CRITICAL(&mux);
+
+        if (localState != STEPPER_IDLE && localState != STEPPER_OFF) {
+            String stateName = getStateName(localState);
+            ESP_LOGI(TAG,
+                     "Diag pin=%u state=%s mode=%s currentFreq=%.2f targetFreq=%.2f targetPos=%.2f encoderFreq=%.2f enabled=%s direction=%s",
+                     stepPin,
+                     stateName.c_str(),
+                     mode == MODE_LEDC ? "LEDC" : "TIMER",
+                     localCurrentFreq,
+                     localTargetFreq,
+                     localTargetPosition,
+                     localEncoderFrequency,
+                     isEnabled() ? "YES" : "NO",
+                     getDirection() ? "FWD" : "REV");
+            lastDiagnosticLogMicros = nowMicros;
         }
     }
 }

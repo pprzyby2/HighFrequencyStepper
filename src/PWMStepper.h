@@ -271,6 +271,17 @@ public:
     double getFrequency() const;
     
     /**
+     * @brief Get current empirical frequency based on encoder feedback (thread-safe)
+     * @return Empirical frequency in Hz calculated from encoder counts
+     */
+    double getEmpiricalFrequency() const {
+        portENTER_CRITICAL(&mux);
+        double freq = encoderFrequency;
+        portEXIT_CRITICAL(&mux);
+        return freq;
+    }
+
+    /**
      * @brief Get target position (thread-safe)
      * @return Target position in microsteps
      */

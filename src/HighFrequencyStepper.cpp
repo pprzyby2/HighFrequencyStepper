@@ -835,6 +835,11 @@ double HighFrequencyStepper::getCurrentFrequency(uint8_t index) {
     return pwmSteppers[index]->getFrequency();
 }
 
+double HighFrequencyStepper::getEmpiricalFrequency(uint8_t index) {
+    if (!validateStepperIndex(index)) return 0.0;
+    return pwmSteppers[index]->getEmpiricalFrequency();
+}
+
 double HighFrequencyStepper::positionToAngle(uint8_t index, int32_t position) {
     if (!validateStepperIndex(index)) return 0.0;
     double stepsPerRev = getMicrostepsPerRevolution(index);

@@ -499,6 +499,12 @@ public:
      */
     double getCurrentFrequency(uint8_t index);
 
+    /**
+     * @brief Get empirical frequency based on encoder feedback     * @param index Stepper index
+     * @return Empirical frequency in Hz calculated from encoder counts
+     */
+    double getEmpiricalFrequency(uint8_t index);
+
     // ==================== Enable/Disable ====================
     
     /**

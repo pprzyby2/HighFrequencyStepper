@@ -233,7 +233,7 @@ void ARDUINO_ISR_ATTR PWMStepper::update() {
     // Timer mode is triggered when frequency is below 500 Hz for better low-speed peformance.
     // In timer mode, we manually toggle the step pin at the correct intervals based on the current frequency.
     if (mode == MODE_TIMER && state != STEPPER_IDLE && state != STEPPER_OFF && localCurrentFreq != 0) {
-        if (state != STEPPER_MOVE_TO_POSITION) {
+        if (false) { // Experimental tracking by encoder mode - not fully implemented yet
             // In tracking by encoder mode, we calculate the expected position based on the current frequency and time since last speed change, and compare it to the actual position from the encoder. 
             // If we are behind where we expect to be, we can toggle the step pin to catch up. This allows us to compensate for missed steps or stalls, especially at low speeds.
             double expectedPosition = calculateExpectedPosition(currentTime, localCurrentFreq);
@@ -386,8 +386,8 @@ void PWMStepper::accelerateToFrequency(double frequency) {
     targetFreq = frequency;
     state = STEPPER_MOVE_WITH_FREQUENCY;
     targetPosition = currentPosition; // Keep target near current position to avoid stale MOVE_TO_POSITION deceleration
-    portEXIT_CRITICAL(&mux);
     resetPosition(getPosition()); // Reset position tracking to avoid drift during acceleration
+    portEXIT_CRITICAL(&mux);
 }
 
 void PWMStepper::moveAtFrequency(double frequency) {
@@ -398,6 +398,7 @@ void PWMStepper::moveAtFrequency(double frequency) {
     targetFreq = frequency;
     state = STEPPER_MOVE_WITH_FREQUENCY;
     targetPosition = currentPosition; // Keep target near current position to avoid stale MOVE_TO_POSITION deceleration
+    resetPosition(getPosition()); // Reset position tracking to avoid drift during acceleration
     portEXIT_CRITICAL(&mux);
     // If we are currently in moveToPosition mode, we want to switch to moveWithFrequency mode immediately with the new target frequency.
     // Acceleration won't be used in this case since we are directly setting the current frequency to the target frequency.
@@ -418,6 +419,7 @@ void PWMStepper::moveToPosition(int64_t position, double frequency) {
     targetPosition = position;
     targetFreq = frequency;
     state = STEPPER_MOVE_TO_POSITION;
+    resetPosition(getPosition()); // Reset position tracking to avoid drift during acceleration
     portEXIT_CRITICAL(&mux);
 }
 
@@ -762,11 +764,9 @@ void PWMStepper::onSpeedChange(double newSpeed) {
 }
 
 void PWMStepper::resetPosition(double newPosition) {
-    portENTER_CRITICAL(&mux);
     expectedPossitionAtLastSpeedChange = newPosition;
     lastSpeedChangeMicros = esp_timer_get_time();
     stepsSinceLastSpeedChange = 0;
-    portEXIT_CRITICAL(&mux);
 }
 
 // Set LEDC resolution (1-16 bits)

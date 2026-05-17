@@ -24,6 +24,7 @@
 #include "test/AngleTests.h"
 #include "test/MaxSpeedTest.h"
 #include "test/RapidTargetChangeTests.h"
+#include "test/StateTransitionTests.h"
 #include "test/ManualControl.h"
 #include <SPI.h>
 
@@ -87,6 +88,7 @@ enum TestOption {
     SHOW_SYSTEM_STATUS = 17,
     LED_STATUS_TEST = 18,
     MANUAL_CONTROL = 19,
+    TEST_STATE_TRANSITIONS = 20,
     RESET_POSITION = 0
 };
 
@@ -218,6 +220,7 @@ void printTestMenu() {
     Serial.println("17. Show System Status");
     Serial.println("18. LED Status Test");
     Serial.println("19. Manual Motor Control");
+    Serial.println("20. State Transition Test");
     Serial.println("0. Reset Position Counter");
     Serial.println("\nEnter test number (or 'h' for help): ");
 }
@@ -274,8 +277,11 @@ void runAllTests() {
     Serial.println("[14/14] Running long run test...");
     testLongRun(stepperController);
 
-    Serial.println("\n[15/15] Running multi-motor independent speeds test...");
+    Serial.println("\n[15/16] Running multi-motor independent speeds test...");
     testMultiMotorIndependentSpeeds(stepperController);
+
+    Serial.println("\n[16/16] Running state transition test...");
+    testStateTransitions(stepperController);
     // Print comprehensive summary
     printTestSummary();
 }
@@ -361,6 +367,12 @@ void processSerialInput() {
                 ledStatus.setStatus(LED_IDLE);
                 printManualControlMenu();
                 return;  // Don't print test menu again
+
+            case TEST_STATE_TRANSITIONS:
+                clearTestResults();
+                testStateTransitions(stepperController);
+                printTestSummary();
+                break;
                 
             case RESET_POSITION:
                 for (int i = 0; i < stepperController.getStepperCount(); i++) {

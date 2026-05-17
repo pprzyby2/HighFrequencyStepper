@@ -233,7 +233,7 @@ void ARDUINO_ISR_ATTR PWMStepper::update() {
     // Timer mode is triggered when frequency is below 500 Hz for better low-speed peformance.
     // In timer mode, we manually toggle the step pin at the correct intervals based on the current frequency.
     if (mode == MODE_TIMER && state != STEPPER_IDLE && state != STEPPER_OFF && localCurrentFreq != 0) {
-        if (TRACKING_BY_ENCODER) {
+        if (state != STEPPER_MOVE_TO_POSITION) {
             // In tracking by encoder mode, we calculate the expected position based on the current frequency and time since last speed change, and compare it to the actual position from the encoder. 
             // If we are behind where we expect to be, we can toggle the step pin to catch up. This allows us to compensate for missed steps or stalls, especially at low speeds.
             double expectedPosition = calculateExpectedPosition(currentTime, localCurrentFreq);

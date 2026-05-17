@@ -866,7 +866,7 @@ double HighFrequencyStepper::frequencyToRPM(uint8_t index, double frequency) con
 bool HighFrequencyStepper::isAtPosition(uint8_t index, int32_t tolerance) {
     if (!validateStepperIndex(index)) return false;
     updatePosition(index);
-    return abs(status[index].currentPosition - status[index].targetPosition) <= tolerance;
+    return abs(getPosition(index) - getTargetPosition(index)) <= tolerance && !pwmSteppers[index]->isMovingToPosition();
 }
 
 StepperConfig HighFrequencyStepper::getConfig(uint8_t index) const {

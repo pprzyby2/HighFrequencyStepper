@@ -42,12 +42,13 @@ enum StepperMode {
 
 class PWMStepper {
 private:
+// Constants
     uint8_t stepPin;
     uint8_t dirPin;
     uint8_t enablePin;
     
     uint8_t ledcChannel;
-    uint32_t ledcFrequency = 1000; // Default 1 kHz
+    uint32_t ledcFrequency = 1000; // Used only for initialization, actual frequency set in startLEDCMode
     uint8_t ledcResolution = 4;     // Default 4-bit resolution
 
    // Add explicit LEDC config for ESP32-S3 (LS only)
@@ -56,28 +57,8 @@ private:
     uint8_t        ledcResolutionBits = 8;   // runtime-selected bits
     ledc_clk_cfg_t ledcClk       = LEDC_USE_APB_CLK; // prefer 80 MHz on S3
 
-    StepperState state = STEPPER_OFF;
-    StepperMode mode = MODE_LEDC;
-
     bool stepperEnabledHigh; // true if enable pin is active HIGH
-    //bool direction;  // true = forward, false = reverse
     bool invertDirection = false; // true = invert direction logic
-    
-    // Spinlock for 64-bit variable synchronization between ISR and main thread
-    mutable portMUX_TYPE mux = portMUX_INITIALIZER_UNLOCKED;
-    
-    volatile double currentFreq = 0;
-    volatile double encoderFrequency = 0;
-    volatile double acceleration;
-    volatile double maxFreq;
-    volatile double targetFreq;
-    volatile double targetPosition;
-    volatile int updateNumber = 0;
-    volatile double decelerationDistance = 0;
-    volatile int reachedTargetCounter = 0; // Counts how many consecutive updates we've been at the target (for stability)
-    static const size_t MAX_POSITION_HISTORY = 100; // Max history size
-    std::vector<double> positionHistory; // For tracking position over time
-    std::vector<uint64_t> updateTimes; // Timestamps of updates
 
     ESP32Encoder* encoder;
     float encoderScale = 1.0; // Scale factor for encoder counts to steps
@@ -85,19 +66,42 @@ private:
     // Dual mode operation
     static const double FREQUENCY_THRESHOLD; // 1024 Hz - below this we use timer mode
     static const double DECELERATION_FREQUENCY; // 1000 Hz - target freq when decelerating
+
+    double acceleration;
+    double maxFreq;
+    static const size_t MAX_POSITION_HISTORY = 100; // Max history size
+
+// State variables    
+    // Spinlock for 64-bit variable synchronization between ISR and main thread
+    mutable portMUX_TYPE mux = portMUX_INITIALIZER_UNLOCKED;
+
+    volatile StepperState pendingNewState = STEPPER_OFF;
+    volatile StepperState state = STEPPER_OFF;
+    volatile StepperMode mode = MODE_LEDC;
+
+    // Deferred command flags for ISR-safe operation
+    // ISR sets these flags, main loop processes them via processCommands()
+    // volatile bool pendingExternalRequest = false; // Flag to indicate an external request (e.g., from main thread)
+    volatile bool pendingFrequencyChange = false;
+    volatile bool pendingStop = false;
+    volatile double pendingNewFrequency = 0;
+    volatile bool pendingStateChange = false;
+        
+    volatile double currentFreq = 0;
+    volatile double encoderFrequency = 0;
+    volatile double targetFreq;
+    volatile double targetPosition;
+    volatile int updateNumber = 0;
+    volatile int reachedTargetCounter = 0; // Counts how many consecutive updates we've been at the target (for stability)
+    std::vector<double> positionHistory; // For tracking position over time
+    std::vector<uint64_t> updateTimes; // Timestamps of updates
+
     
     // Timer mode variables
     volatile uint64_t lastSpeedChangeMicros = 0; // Timestamp of last speed change, used for expected position calculation
     volatile uint32_t stepsSinceLastSpeedChange = 0; // Steps taken since last speed change, used for expected position calculation
     volatile double expectedPossitionAtLastSpeedChange = 0; // Position at the time of last speed change, used for expected position calculation
     
-    // Deferred command flags for ISR-safe operation
-    // ISR sets these flags, main loop processes them via processCommands()
-    volatile bool pendingFrequencyChange = false;
-    volatile bool pendingStop = false;
-    volatile double pendingNewFrequency = 0;
-    volatile bool pendingStateChange = false;
-    volatile StepperState pendingNewState = STEPPER_OFF;
     
     // Internal ISR-safe methods (only set flags, don't call LEDC)
     void requestStartPWM(double frequency);
@@ -124,18 +128,18 @@ private:
     /**
      * @brief Calculate expected number of steps based on current time, last speed change, and current frequency
      * @param currentTime Current time in microseconds
-     * @param lastSpeedChangeMicros Time of last speed change in microseconds
-     * @param currentFreq Current frequency in Hz
+     * @param frequency Current frequency in Hz
      * @return Expected number of steps
      */
-    double calculateExpectedNumberOfSteps(uint64_t currentTime);
+    double calculateExpectedNumberOfSteps(uint64_t currentTime, double frequency);
 
     /**
      * @brief Calculate expected position based on current time, last speed change, current frequency, and encoder feedback
      * @param currentTime Current time in microseconds
+     * @param frequency Current frequency in Hz
      * @return Expected position in microsteps
      */
-    double calculateExpectedPosition(uint64_t currentTime);
+    double calculateExpectedPosition(uint64_t currentTime, double frequency);
     
 public:
     /**

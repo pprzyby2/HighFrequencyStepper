@@ -180,19 +180,19 @@ double ARDUINO_ISR_ATTR alignPositionToEncoder(double position, float encoderSca
     }
 }
 
-double ARDUINO_ISR_ATTR PWMStepper::calculateExpectedNumberOfSteps(uint64_t currentTime) {
-    if (currentFreq == 0) {
+double ARDUINO_ISR_ATTR PWMStepper::calculateExpectedNumberOfSteps(uint64_t currentTime, double frequency) {
+    if (frequency == 0) {
         return 0; // No movement expected if frequency is zero
     }
     uint64_t microsSinceLastSpeedChange = currentTime - lastSpeedChangeMicros;
-    double expectedMicrostepPeriod = 1000000.0 / abs(currentFreq * 2); // Period in microseconds for a full step (times 2 because we toggle 0-1 and 1-0 for each step)
+    double expectedMicrostepPeriod = 1000000.0 / abs(frequency * 2); // Period in microseconds for a full step (times 2 because we toggle 0-1 and 1-0 for each step)
     double expectedNumberOfSteps = double(microsSinceLastSpeedChange) / expectedMicrostepPeriod;   
     // expectedNumberOfSteps += expectedStepsOffset; // Adjust expected steps by the offset to account for any discrepancy in actual steps taken since last speed change
     return expectedNumberOfSteps;
 }
 
-double ARDUINO_ISR_ATTR PWMStepper::calculateExpectedPosition(uint64_t currentTime) {
-    double expectedSteps = calculateExpectedNumberOfSteps(currentTime);
+double ARDUINO_ISR_ATTR PWMStepper::calculateExpectedPosition(uint64_t currentTime, double frequency) {
+    double expectedSteps = calculateExpectedNumberOfSteps(currentTime, frequency);
     return expectedPossitionAtLastSpeedChange + (expectedSteps * (getDirection() ? 0.5 : -0.5)); // Add expected steps to position at last speed change, accounting for direction
 }
 
@@ -203,6 +203,7 @@ void ARDUINO_ISR_ATTR PWMStepper::update() {
     double localTargetPosition = (double) targetPosition;
     double localTargetFreq = (double) targetFreq;
     double localAcceleration = (double) acceleration;
+    double localCurrentFreq = (double) currentFreq;
     StepperState localState = state;  // Capture state atomically
     portEXIT_CRITICAL_ISR(&mux);
     
@@ -231,11 +232,11 @@ void ARDUINO_ISR_ATTR PWMStepper::update() {
     // Handle timer mode stepping if state is active and frequency is above threshold
     // Timer mode is triggered when frequency is below 500 Hz for better low-speed peformance.
     // In timer mode, we manually toggle the step pin at the correct intervals based on the current frequency.
-    if (mode == MODE_TIMER && state != STEPPER_IDLE && state != STEPPER_OFF && currentFreq != 0) {
+    if (mode == MODE_TIMER && state != STEPPER_IDLE && state != STEPPER_OFF && localCurrentFreq != 0) {
         if (TRACKING_BY_ENCODER) {
             // In tracking by encoder mode, we calculate the expected position based on the current frequency and time since last speed change, and compare it to the actual position from the encoder. 
             // If we are behind where we expect to be, we can toggle the step pin to catch up. This allows us to compensate for missed steps or stalls, especially at low speeds.
-            double expectedPosition = calculateExpectedPosition(currentTime);
+            double expectedPosition = calculateExpectedPosition(currentTime, localCurrentFreq);
             if ((direction && currentPosition < expectedPosition) || (!direction && currentPosition > expectedPosition)) {
                 int stepPinState = digitalRead(stepPin); // Read current state
                 pinMode(stepPin, OUTPUT);
@@ -244,7 +245,7 @@ void ARDUINO_ISR_ATTR PWMStepper::update() {
             }
         } else {
             // Calculate how many steps we should have taken since the last speed change based on the current frequency
-            double expectedNumberOfSteps = calculateExpectedNumberOfSteps(currentTime);
+            double expectedNumberOfSteps = calculateExpectedNumberOfSteps(currentTime, localCurrentFreq);
             if (expectedNumberOfSteps > stepsSinceLastSpeedChange && !reachedTarget) {
                 int stepPinState = digitalRead(stepPin); // Read current state
                 pinMode(stepPin, OUTPUT);
@@ -294,16 +295,16 @@ void ARDUINO_ISR_ATTR PWMStepper::update() {
                     // This gives us an estimate of how long it will take to stop if we start decelerating now. 
                     // We can then calculate how far we would travel during that time at the current speed, which gives us an estimate of the deceleration distance. 
                     // If we are within that distance from the target position, we should start decelerating to avoid overshooting.                    
-                    double decelerationUpdates = (abs(currentFreq) / unitFrequencyChange);
+                    double decelerationUpdates = (abs(localCurrentFreq) / unitFrequencyChange);
                     double estimatedDecelerationTime = decelerationUpdates * (freqUpdateInterval * PWM_STEPPER_TIMER_DELAY / 1000000.0);
-                    decelerationDistance = localAcceleration * pow(estimatedDecelerationTime, 2) / 2.0; // (currentFreq * currentFreq) / (2.0 * acceleration);
+                    double decelerationDistance = localAcceleration * pow(estimatedDecelerationTime, 2) / 2.0; // (currentFreq * currentFreq) / (2.0 * acceleration);
                     if (abs(error) < decelerationDistance * 1.5 || abs(error) < MIN_DECEL_ERROR) {
                         localTargetFreq = DECELERATION_FREQUENCY; // Decelerate below timer mode threshold for better low-speed control
                     } else {
                         localTargetFreq = maxFreq; // Accelerate
                     }
                     localTargetFreq = abs(localTargetFreq) * (error > 0 ? 1 : -1); // Ensure target frequency has correct sign based on error direction
-                    double newFreq = currentFreq;
+                    double newFreq = localCurrentFreq;
                 
                     if (newFreq < localTargetFreq) {
                         newFreq += unitFrequencyChange; // Convert delay to seconds
@@ -323,12 +324,12 @@ void ARDUINO_ISR_ATTR PWMStepper::update() {
                 requestStopPWM();
                 pendingNewState = STEPPER_IDLE;
                 pendingStateChange = true;
-                currentFreq = 0;
+                // currentFreq = 0;
             }
             break; // Handle below
         case STEPPER_MOVE_WITH_FREQUENCY:
             {
-                double newFreq = currentFreq;
+                double newFreq = localCurrentFreq;
                 if (localAcceleration != 0) {
                     if (newFreq < localTargetFreq) {
                         newFreq += unitFrequencyChange; // Convert delay to seconds
@@ -632,7 +633,6 @@ void PWMStepper::printStatus() const {
     Serial.printf("Encoder Freq: %.2f Hz, ", encoderFrequency);
     Serial.printf("Target Freq: %.2f Hz, ", targetFreq);
     Serial.printf("Acceleration: %.2f steps/s², ", acceleration);
-    Serial.printf("Dec Distance: %.2f steps, ", decelerationDistance);
     Serial.printf("Current Pos: %.2f, ", getPosition());
     Serial.printf("Target Pos: %.2f, ", targetPosition);
     Serial.printf("State: ");
@@ -744,10 +744,11 @@ void PWMStepper::onSpeedChange(double newSpeed) {
     if (newSpeed == 0) {
         resetPosition(getPosition()); // Reset position tracking when stopping to avoid drift on next start
     }
+    portENTER_CRITICAL(&mux);
     if (newSpeed != currentFreq) {
         uint64_t currentMicros = esp_timer_get_time();
-        double expectedNumberOfSteps = calculateExpectedNumberOfSteps(currentMicros);
-        expectedPossitionAtLastSpeedChange = calculateExpectedPosition(currentMicros);
+        double expectedNumberOfSteps = calculateExpectedNumberOfSteps(currentMicros, newSpeed);
+        expectedPossitionAtLastSpeedChange = calculateExpectedPosition(currentMicros, newSpeed);
         double positionError = getPosition() - expectedPossitionAtLastSpeedChange;
         lastSpeedChangeMicros = currentMicros;
         stepsSinceLastSpeedChange = 0;
@@ -757,6 +758,7 @@ void PWMStepper::onSpeedChange(double newSpeed) {
         // }
     }
     currentFreq = newSpeed;
+    portEXIT_CRITICAL(&mux);
 }
 
 void PWMStepper::resetPosition(double newPosition) {
